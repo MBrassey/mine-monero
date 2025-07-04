@@ -4,8 +4,8 @@
 
 Automated deployment system for streamlined Monero mining with P2Pool decentralized mining, XMRig optimization, and enterprise-grade monitoring & reliability.
 
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;• **Zero Mining Fees** P2Pool  
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;• **Zero Donation** XMRig
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;• **Zero Mining Fees** P2Pool  
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;• **Zero Donation** XMRig
 
 <br clear="left"/>
 
