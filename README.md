@@ -2,6 +2,48 @@
 
 Automated deployment system for streamlined Monero mining with P2Pool decentralized mining, XMRig optimization, and enterprise-grade monitoring & reliability.
 
+<pre>
+<center>
+                                                
+                                                │                                               
+                                                │                    ┏────                      
+                                               ┏┛                 ┏──┛                          
+                       │                       ┗┳─┓            ┏──┫                             
+                       │          │         ┏───┛ ┗─────┓     ┏┛ ┏┛                             
+                       ┗──┓       ┗─┓  ┏────┛▓▓▓▓▓▓▓▓▓▓▓┗────┳┛  │                              
+                          │         ┣──┛▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓┗──┳┛                              
+                          │       ┏─┛▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓┗─┓   ┏─                        
+                          ┗──┓  ┏─┛▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓┗─┳─┛     │                   
+                ──┓          ┗┳─┛▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓┗─┓     ┣─────              
+                  ┗────┓     ┏┛▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓┗┓┏───┛                   
+                       ┗──┓ ┏┛▓▓▓▓▓│▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓│▓▓▓▓▓┗┫                       
+                          ┗┳┛▓▓▓▓▓▓┣──┓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓┏──┫▓▓▓▓▓▓┗┓                      
+                          ┏┛▓▓▓▓▓▓▓│  ┗─┓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓┏─┛  │▓▓▓▓▓▓▓┗┓                     
+                          │▓▓▓▓▓▓▓▓│    ┗─┓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓┏─┛    │▓▓▓▓▓▓▓▓│                     
+                         ┏┛▓▓▓▓▓▓▓▓│      ┗─┓▓▓▓▓▓▓▓▓▓▓▓┏─┛      │▓▓▓▓▓▓▓▓┗┓                    
+                         │▓▓▓▓▓▓▓▓▓│        ┗─┓▓▓▓▓▓▓▓┏─┛        │▓▓▓▓▓▓▓▓▓│   ┏┓               
+               ─┓     ┏──┫▓▓▓▓▓▓▓▓▓│   ┏──┓   ┗─┓▓▓▓┏─┛   ┏──┓   │▓▓▓▓▓▓▓▓▓┣───┛┗────           
+                ┗──┓  │  ┗┓▓▓▓▓▓▓▓▓│   │  ┗─┓   ┗───┛   ┏─┛  │   │▓▓▓▓▓▓▓▓┏┛                    
+                   ┗──┛   │▓▓▓▓▓▓▓▓│   │    ┗─┓       ┏─┛    │   │▓▓▓▓▓▓▓▓│                     
+                          ┗────────┛   │      ┗─┓   ┏─┛      │   ┗────────┛                     
+                                       │        ┗─┳─┛        │                                  
+                                       │                     │                                  
+                              ┏────────┛                     ┗────────┓                         
+                              │                                       │                         
+                              ┗─┓                                   ┏─┛                         
+                               ┏┻─┓                               ┏─┻─┓ ┏──                     
+                             ──┛  ┗─┓                           ┏─┫   ┗─┛                       
+                                 ┏┓ ┣───┓                   ┏───┛ ┗─┓                           
+                               ┏─┛┗─┛   ┗┳───┓         ┏────┻┓      ┗─                          
+                              ┏┛        ─┛   ┗┳───────┳┛     ┗┓                                 
+                            ──┛              ┏┛       ┗┓      ┗┓                                
+                                             │         ┗┓      ┗──                              
+                                                        │                                       
+
+
+</center>
+</pre> 
+
 ## Recommended Hardware Build
 
 This mining setup is optimized for the following hardware configuration:
@@ -44,7 +86,7 @@ This mining setup is optimized for the following hardware configuration:
 - **Case Type:** Modular open-air design for optimal cooling
 - **Motherboard Support:** ATX/MATX/ITX compatibility
 - **Stacking Capability:** Multiple rigs can be stacked vertically
-- **Assembly Guide:** [Complete installation instructions](https://www.ediy.cc/en/2589.htm)
+- **Assembly Guide:** <a href="https://www.ediy.cc/en/2589.htm" target="_blank">Complete installation instructions</a>
 
 **Key Assembly Points:**
 - Install isolation pillars and motherboard mounting
@@ -275,15 +317,15 @@ Mining deployment system automatically downloads and configures the following op
 ### Core Mining Components
 | Component | Repository | Purpose |
 |-----------|------------|---------|
-| **Monero Daemon** | [github.com/monero-project/monero](https://github.com/monero-project/monero) | Official Monero blockchain node and daemon |
-| **P2Pool** | [github.com/SChernykh/p2pool](https://github.com/SChernykh/p2pool) | Decentralized mining pool implementation |
-| **XMRig** | [github.com/xmrig/xmrig](https://github.com/xmrig/xmrig) | High-performance Monero miner |
+| **Monero Daemon** | <a href="https://github.com/monero-project/monero" target="_blank">github.com/monero-project/monero</a> | Official Monero blockchain node and daemon |
+| **P2Pool** | <a href="https://github.com/SChernykh/p2pool" target="_blank">github.com/SChernykh/p2pool</a> | Decentralized mining pool implementation |
+| **XMRig** | <a href="https://github.com/xmrig/xmrig" target="_blank">github.com/xmrig/xmrig</a> | High-performance Monero miner |
 
 ### Monitoring & Metrics
 | Component | Repository | Purpose |
 |-----------|------------|---------|
-| **XMRig Exporter** | [github.com/ArnyminerZ/xmrig-exporter](https://github.com/ArnyminerZ/xmrig-exporter) | Prometheus metrics exporter for XMRig |
-| **Node Exporter** | [github.com/prometheus/node_exporter](https://github.com/prometheus/node_exporter) | System metrics exporter for Prometheus |
+| **XMRig Exporter** | <a href="https://github.com/ArnyminerZ/xmrig-exporter" target="_blank">github.com/ArnyminerZ/xmrig-exporter</a> | Prometheus metrics exporter for XMRig |
+| **Node Exporter** | <a href="https://github.com/prometheus/node_exporter" target="_blank">github.com/prometheus/node_exporter</a> | System metrics exporter for Prometheus |
 
 ### Version Management
 - **Automatic Updates**: All components downloaded from latest stable releases
@@ -317,7 +359,7 @@ Mining deployment system automatically downloads and configures the following op
 - 4-pool failover system (P2Pool primary + 3 backup pools: SupportXMR, Nanopool, MineXMR)
 
 **Recommended Wallet:**
-- Official Monero CLI/GUI v0.18.1.0+ - [Download from getmonero.org](https://www.getmonero.org/downloads/)
+- Official Monero CLI/GUI v0.18.1.0+ - <a href="https://www.getmonero.org/downloads/" target="_blank">Download from getmonero.org</a>
 - Always use a Local Node / one you manage. 
 
 **Note:** Primary wallet addresses required (starting with '4'). Subaddresses not supported.
