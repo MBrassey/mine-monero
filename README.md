@@ -1,10 +1,10 @@
 # Monero Mining Setup
 
-Automated deployment system for professional Monero mining with P2Pool decentralized mining, XMRig optimization, and enterprise-grade monitoring & reliability.
+Automated deployment system for streamlined Monero mining with P2Pool decentralized mining, XMRig optimization, and enterprise-grade monitoring & reliability.
 
-## Operations - Deployment Instructions
+## Deployment Instructions
 
-### Phase 1: BIOS Update and System Preparation
+### Phase 1: BIOS Upgrade and Configuration
 
 **Step 1: BIOS Access and Current Version Documentation**
 1. Power on mining rig
@@ -29,59 +29,111 @@ Automated deployment system for professional Monero mining with P2Pool decentral
 6. **Confirm flash operation** (system will reboot automatically when complete)
 7. After reboot, press **F2** again to verify **BIOS version is updated** on main page
 
-### Phase 2: Operating System Installation
+**Step 4: BIOS Performance Configuration**
+1. Enter BIOS setup (press **F2** during boot)
+2. Navigate to **OC Tweaker** menu
+3. Locate **TDP** setting and change to **105W Enabled**
+4. **Save and Exit** (F10) to apply changes and reboot
 
-**Step 4: Ubuntu Installation**
+### Phase 2: Ubuntu Installation and Repository Setup
+
+**Step 5: Ubuntu 24.04 Installation**
 1. Connect video card to mining rig
 2. Insert Ubuntu 24.04 installation USB
 3. Boot from USB and perform **complete Ubuntu installation**
 4. Configure initial user account during installation
-5. Ensure network connectivity is established
+5. **Use DHCP for network configuration** (module-1.sh will configure static IP later)
+6. Ensure network connectivity is established
 
-**Step 5: System Preparation (module-1.sh)**
+**Step 6: Initial System Setup**
 1. Log into freshly installed Ubuntu system
-2. Navigate to project directory
-3. Execute system preparation script:
+2. Update package repository and install essential tools:
    ```bash
-   chmod +x module-1.sh
+   sudo apt update
+   sudo apt install git vim
+   ```
+
+**Step 7: Clone Mining Repository**
+1. Clone the mine-monero repository:
+   ```bash
+   git clone https://github.com/MBrassey/mine-monero.git
+   cd mine-monero
+   ```
+
+### Phase 3: Configuration Setup
+
+**Step 8: Update Configuration Files**
+
+Before running the modules, update the following configuration files:
+
+**Update config.json with your Monero wallet address:**
+```bash
+vim config.json
+# Replace "WALLET_ADDRESS_PLACEHOLDER" with your actual Monero wallet address
+# Update "RYZEN_01" to your desired rig identifier if needed
+```
+
+**Update module-1.sh with your network details:**
+```bash
+vim module-1.sh
+# Update line 12: STATIC_IP="10.10.10.2" # Change to desired IP
+# Update line 18: ENGINEER_PUBLIC_KEY="ssh-rsa AAAAB3Nza..." # Replace with your SSH public key
+```
+
+**Update module-2.sh with your desired RGB color (optional):**
+```bash
+vim module-2.sh
+# Update TARGET_COLOR variable to desired RGB color (e.g., "00FF00" for green)
+```
+
+### Phase 4: Module Execution
+
+**Step 9: System Preparation and Network Configuration**
+1. Make scripts executable and run system preparation:
+   ```bash
+   chmod +x module-1.sh module-2.sh module-3.sh
    ./module-1.sh
    ```
    This script will:
-   - Assign static IP address
+   - Configure static IP address
    - Enable SSH service  
    - Add engineer public key to authorized_keys
    - Configure huge pages and CPU optimizations
    - **Prompt for system reboot** (required for optimal performance)
 
-**Step 6: System Reboot and Remote Access**
+**Step 10: Test SSH Access and Prepare for Headless Operation**
 1. **Reboot system** when prompted by module-1.sh
 2. Test SSH connectivity from remote workstation:
    ```bash
    ssh [username]@[static-ip-address]
    ```
 3. Verify remote access is working properly
-4. **Remove video card** from mining rig for headless operation
+4. **Shut down the system**:
+   ```bash
+   sudo shutdown now
+   ```
+5. **Remove video card** from mining rig for headless operation
+6. **Boot system back up** (headless mode)
 
-### Phase 3: Headless Mining Setup
-
-**Step 7: RGB Control Configuration (module-2.sh) - OPTIONAL**
-1. Via SSH session, navigate to project directory
+**Step 11: Remote RGB Configuration (Optional)**
+1. SSH into the headless system:
+   ```bash
+   ssh [username]@[static-ip-address]
+   cd mine-monero
+   ```
 2. Execute RGB control configuration (**optional aesthetic enhancement**):
    ```bash
-   chmod +x module-2.sh
    sudo ./module-2.sh
    ```
    This script will:
    - Install OpenRGB universal RGB controller
-   - Detect all RGB devices (motherboard, RAM, coolers, GPU)
+   - Detect all RGB devices (motherboard, RAM, coolers)
    - Apply synchronized color scheme system-wide
    - Configure persistent RGB settings with auto-restore
 
-**Step 8: Mining Software Installation (module-3.sh)**
-1. Via SSH session, navigate to project directory
-2. Execute mining software installation (**no reboot required**):
+**Step 12: Mining Software Installation**
+1. Via SSH session, execute mining software installation:
    ```bash
-   chmod +x module-3.sh
    ./module-3.sh
    ```
    This script will:
@@ -91,12 +143,16 @@ Automated deployment system for professional Monero mining with P2Pool decentral
    - Initialize monitoring services
    - Start all mining operations **immediately**
 
-**Step 9: Operation Verification**
+**Step 13: Operation Verification**
 1. Verify all services are running via SSH:
    ```bash
    sudo systemctl status xmrig p2pool monerod
    ```
-2. Follow real-time logs for each service:
+2. Monitor real-time mining performance:
+   ```bash
+   curl -s http://localhost:18088/1/summary | jq '.hashrate'
+   ```
+3. Follow service logs if needed:
    ```bash
    # XMRig mining logs
    sudo journalctl -u xmrig -f
@@ -107,8 +163,6 @@ Automated deployment system for professional Monero mining with P2Pool decentral
    # Monero daemon logs
    sudo journalctl -u monerod -f
    ```
-3. Monitor initial synchronization and mining startup
-4. Confirm system is operating in production mode
 
 ---
 
