@@ -48,8 +48,7 @@ This mining setup is optimized for the following hardware configuration:
 
 **Key Assembly Points:**
 - Install isolation pillars and motherboard mounting
-- Secure storage drives (3.5" and 2.5" support)
-- Power supply positioning and cable management
+- Secure power supply positioning and cable management
 - Leg post installation for stacking capability
 - Proper component spacing for airflow
 
