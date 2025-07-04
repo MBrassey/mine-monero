@@ -1,6 +1,63 @@
-# Monero Mining Setup
+# AMD Monero Mining Setup
 
 Automated deployment system for streamlined Monero mining with P2Pool decentralized mining, XMRig optimization, and enterprise-grade monitoring & reliability.
+
+## Recommended Hardware Build
+
+This mining setup is optimized for the following hardware configuration:
+
+### Core Components
+
+| Component | Specification | Model |
+|-----------|---------------|-------|
+| **CPU** | AMD Ryzen™ 9 9950X 16-Core, 32-Thread | Unlocked Desktop Processor |
+| **CPU Cooler** | AMD Wraith Prism Cooler | RGB-Controlled Illumination |
+| **RAM** | 16GB DDR5 6000MHz CL30 (1x16GB) | XPG Lancer Blade RGB DDR5 PC5-48000 (AX5U6000C3016G-DTLABRBK) |
+| **Storage** | 500GB NVMe M.2 2280 | XPG SPECTRIX S20G RGB PCIe Gen3x4 NVMe 1.3 (ASPECTRIXS20G-500G-C) |
+| **Motherboard** | ASRock B650M PG Lightning WiFi 6E | AMD Socket AM5 B650 DDR5 up to 7200+ MHz Micro ATX |
+| **Power Supply** | 650W ATX3.0 80 Plus Gold | XPG Core Reactor II Modular PSU (COREREACTORII650G-BKCUS) |
+| **Case** | Stackable Open Air Computer Case Rack | Modular PC Frame Chassis for ATX/MATX/ITX |
+
+### Performance Specifications
+
+**CPU Performance:**
+- **Cores/Threads:** 16-Core, 32-Thread processing
+- **Base/Boost Clock:** Optimized for RandomX algorithm
+- **TDP Configuration:** 105W (configured in BIOS)
+- **Expected Hashrate:** ~18,000-22,000 H/s (RandomX)
+
+**Memory Configuration:**
+- **Capacity:** 16GB (1x16GB single-channel)
+- **Speed:** DDR5-6000 MHz CL30
+- **Slot Placement:** Install in second RAM slot from CPU (A2/DIMM2)
+- **Placement Reason:** Optimal signal integrity and stability for high-speed DDR5 memory
+- **Huge Pages Support:** 1GB and 2MB pages for RandomX optimization
+
+**Storage & Connectivity:**
+- **NVMe SSD:** 2,500/1,800 MB/s read/write speeds
+- **Network:** WiFi 6E + Gigabit Ethernet
+- **Expansion:** Multiple PCIe slots for future upgrades
+
+### Case Assembly Instructions
+
+**Stackable Open Air Case Setup:**
+- **Case Type:** Modular open-air design for optimal cooling
+- **Motherboard Support:** ATX/MATX/ITX compatibility
+- **Stacking Capability:** Multiple rigs can be stacked vertically
+- **Assembly Guide:** [Complete installation instructions](https://www.ediy.cc/en/2589.htm)
+
+**Key Assembly Points:**
+- Install isolation pillars and motherboard mounting
+- Secure storage drives (3.5" and 2.5" support)
+- Power supply positioning and cable management
+- Leg post installation for stacking capability
+- Proper component spacing for airflow
+
+**Benefits for Mining:**
+- **Superior Cooling:** Open-air design maximizes heat dissipation
+- **Easy Maintenance:** Direct access to all components
+- **Scalability:** Stack multiple mining rigs in minimal space
+- **Cost Effective:** Eliminates traditional case limitations
 
 ## Deployment Instructions
 
