@@ -2,7 +2,7 @@
 
 <img align="left" src="https://s2.coinmarketcap.com/static/img/coins/128x128/328.png" alt="Monero Logo" width="128" height="128">
 
-    Automated deployment system for streamlined Monero mining with P2Pool decentralized mining, XMRig optimization, and enterprise-grade monitoring & reliability.
+Automated deployment system for streamlined Monero mining with P2Pool decentralized mining, XMRig optimization, and enterprise-grade monitoring & reliability.
 
 <br clear="left"/>
 
