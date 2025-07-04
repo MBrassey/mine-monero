@@ -1,10 +1,6 @@
-# AMD Ryzen Monero (XMR) Mining Setup
+# AMD Ryzen Monero (XMR) Mining Suite
 
-<div align="center">
-  <img src="https://assets.coingecko.com/coins/images/69/standard/monero_logo.png" alt="Monero Logo" width="120" height="120">
-  <br/>
-  <h3>Professional Mining Deployment System</h3>
-</div>
+<img src="https://s2.coinmarketcap.com/static/img/coins/128x128/328.png" alt="Monero Logo" width="128" height="128" style="float: left; margin-right: 20px; margin-bottom: 10px;">
 
 Automated deployment system for streamlined Monero mining with P2Pool decentralized mining, XMRig optimization, and enterprise-grade monitoring & reliability.
 
