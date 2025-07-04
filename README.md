@@ -35,7 +35,7 @@ This mining setup is optimized for the following hardware configuration:
 
 **Storage & Connectivity:**
 - **NVMe SSD:** 2,500/1,800 MB/s read/write speeds
-- **Network:** WiFi 6E + Gigabit Ethernet
+- **Network:** Gigabit Ethernet (REMOVE THE WIFI CARD FOR SECURITY)
 - **Expansion:** Multiple PCIe slots for future upgrades
 
 ### Case Assembly Instructions
@@ -316,11 +316,8 @@ Mining deployment system automatically downloads and configures the following op
 - IRQ affinity isolation for mining cores
 - 4-pool failover system (P2Pool primary + 3 backup pools: SupportXMR, Nanopool, MineXMR)
 
-**Compatible Wallets:**
-- Official Monero CLI/GUI v0.18.1.0+
-- Cake Wallet v4.4.5+
-- Feather Wallet v2.1.0+
-- MyMonero
+**Recommended Wallet:**
+- Official Monero CLI/GUI v0.18.1.0+ - [Download from getmonero.org](https://www.getmonero.org/downloads/)
 
 **Note:** Primary wallet addresses required (starting with '4'). Subaddresses not supported.
 
