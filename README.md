@@ -57,14 +57,14 @@ Automated deployment system for streamlined Monero mining with P2Pool decentrali
 1. Clone the mine-monero repository:
    ```bash
    git clone https://github.com/MBrassey/mine-monero.git
-   cd mine-monero
+   cd mine-monero/deploy
    ```
 
 ### Phase 3: Configuration Setup
 
 **Step 8: Update Configuration Files**
 
-Before running the modules, update the following configuration files:
+Before running the modules, update the following configuration files in the `deploy` directory:
 
 **Update config.json with your Monero wallet address:**
 ```bash
@@ -119,7 +119,7 @@ vim module-2.sh
 1. SSH into the headless system:
    ```bash
    ssh [username]@[static-ip-address]
-   cd mine-monero
+   cd mine-monero/deploy
    ```
 2. Execute RGB control configuration (**optional aesthetic enhancement**):
    ```bash
