@@ -1,4 +1,4 @@
-# AMD Monero Mining Setup
+# AMD Ryzen Monero (XMR) Mining Setup
 
 Automated deployment system for streamlined Monero mining with P2Pool decentralized mining, XMRig optimization, and enterprise-grade monitoring & reliability.
 
