@@ -318,6 +318,7 @@ Mining deployment system automatically downloads and configures the following op
 
 **Recommended Wallet:**
 - Official Monero CLI/GUI v0.18.1.0+ - [Download from getmonero.org](https://www.getmonero.org/downloads/)
+- Always use a Local Node / one you manage. 
 
 **Note:** Primary wallet addresses required (starting with '4'). Subaddresses not supported.
 
