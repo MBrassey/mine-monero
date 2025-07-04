@@ -41,15 +41,14 @@ This mining setup is optimized for the following hardware configuration:
 - **Huge Pages Support:** 1GB and 2MB pages for RandomX optimization
 
 **Storage & Connectivity:**
-- **NVMe SSD:** 2,500/1,800 MB/s read/write speeds
-- **Network:** Gigabit Ethernet (REMOVE THE WIFI CARD FOR SECURITY)
-- **Expansion:** Multiple PCIe slots for future upgrades
+- **NVMe SSD:** 500GB (Sufficient storage for the chain data, backups, metrics, logs etc.)
+- **Network:** Gigabit Ethernet (REMOVE WIFI MODULE FOR SECURITY)
 
 ### Case Assembly Instructions
 
 **Stackable Open Air Case Setup:**
 - **Case Type:** Modular open-air design for optimal cooling
-- **Motherboard Support:** ATX/MATX/ITX compatibility
+- **Motherboard Support:** Stable VRM design for 24/7 mining loads and DDR5-6000 memory bus speeds
 - **Stacking Capability:** Multiple rigs can be stacked vertically
 - **Assembly Guide:** <a href="https://www.ediy.cc/en/2589.htm" target="_blank">Complete installation instructions</a>
 
@@ -58,12 +57,6 @@ This mining setup is optimized for the following hardware configuration:
 - Secure power supply positioning and cable management
 - Leg post installation for stacking capability
 - Proper component spacing for airflow
-
-**Benefits for Mining:**
-- **Superior Cooling:** Open-air design maximizes heat dissipation
-- **Easy Maintenance:** Direct access to all components
-- **Scalability:** Stack multiple mining rigs in minimal space
-- **Cost Effective:** Eliminates traditional case limitations
 
 ## Deployment Instructions
 
@@ -272,7 +265,7 @@ vim module-2.sh
 
 - Ubuntu 20.04+ or Debian 11+ (x64 or ARM64)
 - Minimum 4GB RAM (8GB recommended)
-- Minimum 50GB free disk space
+- Minimum 80GB free disk space
 - Stable internet connection
 
 ## Dependencies & Repositories
@@ -294,7 +287,6 @@ Mining deployment system automatically downloads and configures the following op
 
 ### Version Management
 - **Automatic Updates**: All components downloaded from latest stable releases
-- **2025 Current Versions**: XMRig (latest from GitHub), Monero v0.18.4.0+, P2Pool v4.2+, Node Exporter v1.8.2+
 - **Version Fallbacks**: Tested fallback versions used if latest releases unavailable
 - **Source Compilation**: XMRig compiled from source with zero donation configuration
 - **Binary Downloads**: P2Pool, Node Exporter use pre-compiled binaries for faster deployment
