@@ -1,11 +1,15 @@
 # AMD Ryzen Monero (XMR) Mining Suite
 
-<div style="display: flex; align-items: flex-start; margin-bottom: 20px;">
-  <img src="https://s2.coinmarketcap.com/static/img/coins/128x128/328.png" alt="Monero Logo" width="128" height="128" style="margin-right: 20px; flex-shrink: 0;">
-  <div>
-    Automated deployment system for streamlined Monero mining with P2Pool decentralized mining, XMRig optimization, and enterprise-grade monitoring & reliability.
-  </div>
-</div>
+<table style="border: none;">
+<tr style="border: none;">
+<td style="border: none; vertical-align: top; padding-right: 20px;">
+<img src="https://s2.coinmarketcap.com/static/img/coins/128x128/328.png" alt="Monero Logo" width="128" height="128">
+</td>
+<td style="border: none; vertical-align: top;">
+Automated deployment system for streamlined Monero mining with P2Pool decentralized mining, XMRig optimization, and enterprise-grade monitoring & reliability.
+</td>
+</tr>
+</table>
 
 ## Recommended Hardware Build
 
