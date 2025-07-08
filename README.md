@@ -122,20 +122,20 @@ This mining setup is optimized for the following hardware configuration:
 
 Before running the modules, update the following configuration files in the `deploy` directory:
 
-**Update config.json with your Monero wallet address:**
+**Configure config.json:**
 ```bash
 vim config.json
-# Replace "WALLET_ADDRESS_PLACEHOLDER" with your actual Monero wallet address
-# Update "RYZEN_01" to your desired rig identifier if needed
+# Replace "WALLET_ADDRESS_PLACEHOLDER" with the target Monero wallet address
+# Update "RYZEN_01" to the required rig identifier
 ```
 
-**Update module-1.sh with your SSH key:**
+**Configure module-1.sh:**
 ```bash
 vim module-1.sh
-# Update ENGINEER_PUBLIC_KEY with your SSH public key for remote access
+# Set ENGINEER_PUBLIC_KEY to the required SSH public key
 ```
 
-**Update module-2.sh with your desired RGB color (optional):**
+**Configure module-2.sh (optional):**
 ```bash
 vim module-2.sh
 # Update TARGET_COLOR variable to desired RGB color (e.g., "00FF00" for green)
@@ -330,7 +330,7 @@ Mining deployment uses two-phase approach for maximum reliability and security:
 
 ```bash
 vim module-1.sh
-# Update ENGINEER_PUBLIC_KEY with your SSH public key for remote access
+# Set ENGINEER_PUBLIC_KEY to the required SSH public key
 ```
 
 **What it does:**
@@ -611,7 +611,7 @@ Complete `prometheus.yml` configuration file is included for monitoring multiple
 
 ```yaml
 # Copy provided prometheus.yml file to Prometheus server
-# Update target IPs to match your mining rig addresses
+# Update target IPs to match the mining rig addresses
 # Example: RYZEN_01, RYZEN_02, RYZEN_03, etc.
 ```
 
