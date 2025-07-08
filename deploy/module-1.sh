@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Module 1: System Preparation
-# Configures static IP, SSH access, and hardware optimizations
+# Configures SSH access and hardware optimizations
 # Requires reboot for full optimization activation
 
 set -e
@@ -9,19 +9,12 @@ set -e
 # ================================
 # CONFIGURATION VARIABLES
 # ================================
-STATIC_IP="10.10.10.2" # UPDATE
-GATEWAY="10.10.10.1"
-SUBNET_MASK="255.255.255.0"
-CIDR_NOTATION="24"
-DNS_SERVERS="8.8.8.8,8.8.4.4"
 
 # Engineer SSH Public Key
 ENGINEER_PUBLIC_KEY="ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCrNr+t1LzMiyAtt0Lpr/EIB6jiddZltnH9DZ5mv+SrkKjwBVvmzFbjUjjzwoGD/RGEsorj7bEa29GkVrmXXHKFIcK6+IijUUMp2DbBJTp8rWy3XLcm3Ta6iTemqUvmhHQYImxQSEGqXeN0v2uwF0gfU81q/cueh6BfjNctwwNrzG9//ybdH1M4K+bw4cHJpgef/TXdU4q4F+khws9JMDI4eSRaoJVe9PEHkOOJ7QAzqW3kqe1Wql2u5y43kJpnS4TIDC8ketzxwo1Ts7u3CyYfe+Z2Z68Jfl+5kH6kkrSIAfFzrF6arrlqe9sv1PUtrE3AAGXBVjfK9rBKo6iAl1LnCz+rU3dUbVLH6F640ww71kX9vquoFvU0RFXHuJSBWGjeAZsFoPuOfLVdxZJ1Q3CAGNVjBkAzEaANI7oJPNBMrMtoJD3P/gsfARBsK99uWnjeoCLYvNOdJyHWyh92/6BdsVEdzdQBf6CkQvTQVyHS/YjJ2oLUNwfqBRUa3HZEuis= matt@brassey.io"
 
 # Global Variables
 PRIMARY_INTERFACE=""
-CURRENT_IP=""
-ORIGINAL_GATEWAY=""
 
 # ================================
 # LOGGING FUNCTIONS
@@ -156,13 +149,7 @@ detect_network_interface() {
         exit 1
     fi
     
-    # Get current network configuration
-    CURRENT_IP=$(ip addr show "$PRIMARY_INTERFACE" | grep "inet " | awk '{print $2}' | cut -d'/' -f1 | head -n1)
-    ORIGINAL_GATEWAY=$(ip route | grep default | awk '{print $3}' | head -n1)
-    
     success "Primary interface detected: $PRIMARY_INTERFACE"
-    info "Current IP: ${CURRENT_IP:-'No IP assigned'}"
-    info "Current Gateway: ${ORIGINAL_GATEWAY:-'No gateway'}"
     
     # Show interface details
     info "Interface details:"
@@ -170,43 +157,6 @@ detect_network_interface() {
     
     if ! confirm "Continue with interface $PRIMARY_INTERFACE?" "y"; then
         error "User canceled interface selection"
-        exit 1
-    fi
-}
-
-verify_network_configuration() {
-    section "Verifying Network Configuration"
-    
-    info "Target static IP: $STATIC_IP/$CIDR_NOTATION"
-    info "Target gateway: $GATEWAY"
-    info "DNS servers: $DNS_SERVERS"
-    
-    # Validate IP format
-    if ! [[ $STATIC_IP =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
-        error "Invalid IP address format: $STATIC_IP"
-        exit 1
-    fi
-    
-    if ! [[ $GATEWAY =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
-        error "Invalid gateway address format: $GATEWAY"
-        exit 1
-    fi
-    
-    # Check if IP is in same subnet as gateway
-    local static_network=$(echo $STATIC_IP | cut -d. -f1-3)
-    local gateway_network=$(echo $GATEWAY | cut -d. -f1-3)
-    
-    if [[ "$static_network" != "$gateway_network" ]]; then
-        warning "Static IP and gateway appear to be in different subnets"
-        if ! confirm "Continue anyway?"; then
-            exit 1
-        fi
-    fi
-    
-    success "Network configuration validated"
-    
-    if ! confirm "Proceed with network configuration?" "y"; then
-        error "User canceled network configuration"
         exit 1
     fi
 }
@@ -272,119 +222,6 @@ install_essential_tools() {
     done
     
     success "Essential tools installation completed"
-}
-
-configure_static_network() {
-    section "Configuring Static Network"
-    
-    info "Backing up existing netplan configuration..."
-    sudo mkdir -p /etc/netplan/backup
-    sudo cp /etc/netplan/*.yaml /etc/netplan/backup/ 2>/dev/null || true
-    
-    info "Creating static IP configuration for interface: $PRIMARY_INTERFACE"
-    
-    # Create new netplan configuration
-    cat << EOF | sudo tee /etc/netplan/01-static-config.yaml
-network:
-  version: 2
-  renderer: networkd
-  ethernets:
-    ${PRIMARY_INTERFACE}:
-      dhcp4: false
-      addresses:
-        - ${STATIC_IP}/${CIDR_NOTATION}
-      gateway4: ${GATEWAY}
-      nameservers:
-        addresses: [8.8.8.8, 8.8.4.4]
-      optional: true
-EOF
-
-    success "Static network configuration created"
-    
-    # Validate netplan configuration
-    info "Validating netplan configuration..."
-    if ! sudo netplan generate; then
-        error "Netplan configuration validation failed"
-        exit 1
-    fi
-    
-    success "Netplan configuration validated"
-    
-    if confirm "Apply network configuration now? (This may temporarily disconnect the session)" "y"; then
-        info "Applying network configuration..."
-        if sudo netplan apply; then
-            success "Network configuration applied"
-            sleep 3  # Allow time for network to stabilize
-        else
-            error "Failed to apply network configuration"
-            exit 1
-        fi
-    fi
-}
-
-verify_network_connectivity() {
-    section "Verifying Network Connectivity"
-    
-    # Get current IP after configuration
-    local new_ip=$(hostname -I | awk '{print $1}')
-    info "Current IP address: $new_ip"
-    
-    # Verify static IP was actually applied
-    if [[ "$new_ip" == "$STATIC_IP" ]]; then
-        success "Static IP correctly applied: $STATIC_IP"
-    else
-        error "Static IP not applied correctly. Expected: $STATIC_IP, Got: $new_ip"
-        info "This may require reboot or manual network restart"
-        if confirm "Continue anyway? (May need manual network restart)" "n"; then
-            warning "Continuing with potentially incorrect network configuration"
-        else
-            exit 1
-        fi
-    fi
-    
-    # Test local connectivity
-    info "Testing local connectivity..."
-    if ping -c 2 "$GATEWAY" >/dev/null 2>&1; then
-        success "Gateway ($GATEWAY) is reachable"
-    else
-        error "Gateway ($GATEWAY) is not reachable - network configuration failed"
-        exit 1
-    fi
-    
-    # Test internet connectivity
-    info "Testing internet connectivity..."
-    if ping -c 3 8.8.8.8 >/dev/null 2>&1; then
-        success "Internet connectivity verified"
-    else
-        error "Internet connectivity test failed"
-        exit 1
-    fi
-    
-    # Test DNS resolution
-    info "Testing DNS resolution..."
-    if nslookup google.com >/dev/null 2>&1; then
-        success "DNS resolution working"
-    else
-        warning "DNS resolution test failed - continuing with backup DNS"
-    fi
-    
-    # Additional network verification
-    info "Verifying network route configuration..."
-    local default_route=$(ip route | grep default | awk '{print $3}' | head -n1)
-    if [[ "$default_route" == "$GATEWAY" ]]; then
-        success "Default route correctly configured to: $GATEWAY"
-    else
-        warning "Default route mismatch. Expected: $GATEWAY, Got: $default_route"
-    fi
-    
-    # Test network interface configuration
-    info "Verifying interface configuration..."
-    local interface_ip=$(ip addr show "$PRIMARY_INTERFACE" | grep "inet " | awk '{print $2}' | cut -d'/' -f1 | head -n1)
-    if [[ "$interface_ip" == "$STATIC_IP" ]]; then
-        success "Interface $PRIMARY_INTERFACE correctly configured with $STATIC_IP"
-    else
-        warning "Interface IP mismatch. Expected: $STATIC_IP, Got: $interface_ip"
-    fi
 }
 
 configure_ssh_access() {
@@ -883,7 +720,7 @@ prompt_reboot() {
     if confirm "Reboot now to enable all optimizations? (Recommended)" "y"; then
         info "System will reboot in 10 seconds..."
         info "After reboot:"
-        info "  1. SSH back into system: ssh ${USER}@${STATIC_IP}"
+        info "  1. SSH back into system"
         info "  2. Remove video card (if not done already)"
         info "  3. Run module-3.sh for mining software installation"
         echo ""
@@ -908,8 +745,7 @@ prompt_reboot() {
 
 main() {
     section "Module 1: System Preparation Script"
-    info "Configuring mining rig with static IP: ${STATIC_IP}"
-    info "Target gateway: ${GATEWAY}"
+    info "Configuring mining rig hardware optimizations"
     info "Engineer SSH key will be installed for remote access"
     
     if ! confirm "Begin Module 1 system preparation?" "y"; then
@@ -920,11 +756,8 @@ main() {
     # Execute all modules in sequence with verification
     verify_root_access
     detect_network_interface
-    verify_network_configuration
     update_system_packages
     install_essential_tools
-    configure_static_network
-    verify_network_connectivity
     configure_ssh_access
     configure_firewall
     optimize_system
@@ -936,8 +769,6 @@ main() {
     
     # Final system information and next steps
     section "Module 1 Configuration Complete"
-    success "Static IP configured: ${STATIC_IP}"
-    success "Gateway configured: ${GATEWAY}"
     success "SSH access enabled for user: ${USER}"
     success "Engineer public key added to authorized_keys"
     success "Essential tools installed: bpytop, netstat, jq, and others"

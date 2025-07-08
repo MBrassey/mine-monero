@@ -98,7 +98,7 @@ This mining setup is optimized for the following hardware configuration:
 2. Insert Ubuntu 24.04 installation USB
 3. Boot from USB and perform **complete Ubuntu installation**
 4. Configure initial user account during installation
-5. **Use DHCP for network configuration** (module-1.sh will configure static IP later)
+5. Configure network settings during installation
 6. Ensure network connectivity is established
 
 **Step 6: Initial System Setup**
@@ -129,11 +129,10 @@ vim config.json
 # Update "RYZEN_01" to your desired rig identifier if needed
 ```
 
-**Update module-1.sh with your network details:**
+**Update module-1.sh with your SSH key:**
 ```bash
 vim module-1.sh
-# Update line 12: STATIC_IP="10.10.10.2" # Change to desired IP
-# Update line 18: ENGINEER_PUBLIC_KEY="ssh-rsa AAAAB3Nza..." # Replace with your SSH public key
+# Update ENGINEER_PUBLIC_KEY with your SSH public key for remote access
 ```
 
 **Update module-2.sh with your desired RGB color (optional):**
@@ -151,17 +150,17 @@ vim module-2.sh
    ./module-1.sh
    ```
    This script will:
-   - Configure static IP address
-   - Enable SSH service  
+   - Enable SSH service with security hardening
    - Add engineer public key to authorized_keys
    - Configure huge pages and CPU optimizations
+   - Set up thermal monitoring and performance tuning
    - **Prompt for system reboot** (required for optimal performance)
 
 **Step 10: Test SSH Access and Prepare for Headless Operation**
 1. **Reboot system** when prompted by module-1.sh
 2. Test SSH connectivity from remote workstation:
    ```bash
-   ssh [username]@[static-ip-address]
+   ssh [username]@[ip-address]
    ```
 3. Verify remote access is working properly
 4. **Shut down the system**:
@@ -174,7 +173,7 @@ vim module-2.sh
 **Step 11: Remote RGB Configuration (Optional)**
 1. SSH into the headless system:
    ```bash
-   ssh [username]@[static-ip-address]
+   ssh [username]@[ip-address]
    cd mine-monero/deploy
    ```
 2. Execute RGB control configuration (**optional aesthetic enhancement**):
@@ -327,30 +326,27 @@ Mining deployment uses two-phase approach for maximum reliability and security:
 
 ### Phase 1: System Preparation (module-1.sh)
 
-**Before running module-1.sh**, update configuration variables:
+**Before running module-1.sh**, update configuration:
 
 ```bash
 vim module-1.sh
-# Update line 12: STATIC_IP="10.10.10.2" # UPDATE
-# Change to desired IP (e.g., STATIC_IP="10.10.10.3")
-
-# Update line 18: ENGINEER_PUBLIC_KEY="ssh-rsa AAAAB3Nza..."
-# Replace with SSH public key for remote access
+# Update ENGINEER_PUBLIC_KEY with your SSH public key for remote access
 ```
 
 **What it does:**
-- Verifies root access and detects network interface
-- Configures network interface with static IP (10.10.10.X)
-- Updates system packages and installs essential tools (bpytop, net-tools, jq, curl, git, etc.)
-- Hardens SSH security with fail2ban brute-force protection and engineer key access
-- Configures firewall (UFW) with mining network access and metrics ports (9100, 9101, 18088)
+- Updates system packages and installs essential tools (bpytop, net-tools, jq, etc.)
+- Configures SSH access with security hardening and fail2ban protection
+- Sets up hardware optimizations:
+  - Huge pages (1GB and 2MB) for RandomX performance
+  - CPU register (MSR) optimizations
+  - IRQ affinity optimization (isolates system IRQs to cores 0-1)
+  - Thermal monitoring with dynamic frequency scaling
+  - Performance governor settings and CPU tuning
+- Configures firewall (UFW) with mining network access and metrics ports
 - Disables unnecessary services (bluetooth, cups, avahi-daemon, snapd, etc.)
-- **Configures 1GB and 2MB huge pages for RandomX performance**
-- **Applies MSR (CPU register) optimizations and performance governor**
-- **Sets up IRQ affinity optimization (isolates system IRQs to cores 0-1)**
-- **Configures persistent CPU optimizations and thermal monitoring**
 - Creates system utilities (system-info command) and mining directories
-- **Requires reboot to enable all hardware optimizations**
+- Applies kernel-level optimizations for mining performance
+- Requires system reboot after completion for full optimization
 
 ```bash
 chmod +x module-1.sh
@@ -360,12 +356,12 @@ chmod +x module-1.sh
 
 ### Phase 2: RGB Control Configuration (module-2.sh) - OPTIONAL
 **What it does:**
-- Installs OpenRGB universal RGB device controller
-- Detects all RGB hardware (motherboard, RAM, coolers, GPU, SSDs)
-- Categorizes devices by type for systematic control
-- Applies synchronized color scheme across all RGB components
-- Creates permanent RGB profiles with systemd auto-restore service
-- Configures boot-time RGB restoration for persistent aesthetics
+- Optional module for RGB device control
+- Installs and configures OpenRGB universal controller
+- Detects and manages all RGB devices (motherboard, RAM, coolers)
+- Sets up persistent RGB profiles with custom color schemes
+- Creates systemd service for RGB settings restoration on boot
+- Provides temperature-based RGB feedback (optional)
 
 ```bash
 # Optional RGB configuration (aesthetic enhancement):
@@ -376,16 +372,31 @@ sudo ./module-2.sh
 
 ### Phase 3: Mining Software Installation (module-3.sh)
 **What it does:**
-- Detects hardware configuration and installs mining-specific build dependencies
-- Downloads and compiles latest XMRig from GitHub source with 0% donation level
-- Downloads and installs latest Monero daemon (pruned blockchain mode)
-- Downloads and installs latest P2Pool decentralized mining pool
-- **Configures 4-pool failover system (P2Pool primary + 3 backup pools: SupportXMR, Nanopool, MineXMR)**
-- Applies hardware-specific optimizations (memory bandwidth testing, CPU tuning, cache optimization)
-- **Installs Prometheus metrics exporters (XMRig Exporter, Node Exporter)**
+- Performs hardware detection and dependency verification
+- Downloads and verifies mining components with integrity checks:
+  - XMRig miner (compiled from source with 0% donation)
+  - P2Pool for decentralized mining (0% fees)
+  - Monero daemon in pruned mode
+- Applies hardware-specific optimizations:
+  - Memory bandwidth testing and tuning
+  - CPU cache and thread affinity optimization
+  - RandomX-specific performance settings
+- Sets up comprehensive monitoring:
+  - XMRig HTTP API for real-time statistics
+  - Prometheus exporters for metrics collection
+  - System metrics and thermal monitoring
+  - Automated service health checks
+- Configures 4-pool failover system:
+  - P2Pool (primary)
+  - Three backup pools (SupportXMR, Nanopool, MineXMR)
 - Creates systemd services with proper dependencies and restart logic
-- **Starts all services in sequence: Node Exporter → Monero → P2Pool → XMRig → XMRig Exporter**
-- Verifies all APIs respond and mining is active with payment address validation
+- Includes automated recovery and monitoring features:
+  - Service health monitoring with automatic recovery
+  - Thermal protection with dynamic frequency scaling
+  - Wallet address verification and monitoring
+  - Comprehensive logging system
+- Verifies all installations, APIs, and mining activity before completion
+- Starts all services in correct sequence with health checks
 
 ```bash
 # After reboot from module-1:
@@ -600,8 +611,8 @@ Complete `prometheus.yml` configuration file is included for monitoring multiple
 
 ```yaml
 # Copy provided prometheus.yml file to Prometheus server
-# Update target IPs to match mining rig network addresses
-# Default network: 10.10.10.0/24 with rigs RYZEN_01, RYZEN_02, RYZEN_03, etc.
+# Update target IPs to match your mining rig addresses
+# Example: RYZEN_01, RYZEN_02, RYZEN_03, etc.
 ```
 
 **Quick Setup:**
@@ -829,7 +840,7 @@ sudo systemctl start monerod
 
 ### Network Security
 - **External firewall ports:** 9100 (XMRig Exporter), 9101 (Node Exporter), 18088 (XMRig API)
-- **Mining network access:** 18080 (Monero P2P), 37889 (P2Pool) accessible via 10.10.10.0/24
+- **Mining ports:** 18080 (Monero P2P), 37889 (P2Pool)
 - Network service monitoring enabled
 - External metrics access available for monitoring
 
@@ -923,3 +934,9 @@ sudo systemctl status xmrig p2pool monerod thermal-monitor
 **Community Support:**
 - P2Pool: #p2pool-log on Libera.Chat
 - Monero: r/MoneroMining
+
+## License
+
+`mine-monero` is published under the **CC0_1.0_Universal** license.
+
+> The Creative Commons CC0 Public Domain Dedication waives copyright interest in a work you've created and dedicates it to the world-wide public domain. Use CC0 to opt out of copyright entirely and ensure your work has the widest reach. As with the Unlicense and typical software licenses, CC0 disclaims warranties. CC0 is very similar to the Unlicense.

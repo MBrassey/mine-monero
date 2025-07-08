@@ -15,6 +15,18 @@ CONFIG_DIR="$HOME/xmrig_config"
 LOG_FILE="/tmp/xmrig_install.log"
 TIMEOUT_SECONDS=30
 
+# Required package versions
+MIN_GCC_VERSION="9.4.0"
+MIN_CMAKE_VERSION="3.16.0"
+MIN_OPENSSL_VERSION="1.1.1"
+
+# Download verification
+declare -A DOWNLOAD_MIRRORS=(
+    ["monero"]="https://downloads.getmonero.org/cli/ https://github.com/monero-project/monero/releases/download/"
+    ["p2pool"]="https://github.com/SChernykh/p2pool/releases/download/ https://p2pool.io/download/"
+    ["node_exporter"]="https://github.com/prometheus/node_exporter/releases/download/ https://prometheus.io/download/"
+)
+
 # ================================
 # LOGGING FUNCTIONS
 # ================================
@@ -45,6 +57,217 @@ info() {
 # ================================
 # VALIDATION FUNCTIONS
 # ================================
+
+# Download helper functions
+download_with_retry() {
+    local url="$1"
+    local output="$2"
+    local max_attempts=3
+    local attempt=1
+    local component="$3"
+    
+    while [[ $attempt -le $max_attempts ]]; do
+        log "Download attempt $attempt/$max_attempts: $url"
+        if wget -q -O "$output" "$url"; then
+            log "Download successful: $output"
+            return 0
+        fi
+        
+        # Try alternate mirror if available
+        if [[ -n "$component" && -n "${DOWNLOAD_MIRRORS[$component]}" ]]; then
+            local mirrors=(${DOWNLOAD_MIRRORS[$component]})
+            for mirror in "${mirrors[@]}"; do
+                local mirror_url="${url/$mirrors[0]/$mirror}"
+                log "Trying alternate mirror: $mirror_url"
+                if wget -q -O "$output" "$mirror_url"; then
+                    log "Download successful from mirror: $output"
+                    return 0
+                fi
+            done
+        fi
+        
+        ((attempt++))
+        sleep 5
+    done
+    
+    error "Failed to download after $max_attempts attempts: $url"
+    return 1
+}
+
+verify_download_integrity() {
+    local file="$1"
+    local expected_hash="$2"
+    local component="$3"
+    
+    if [[ ! -f "$file" ]]; then
+        error "File not found for integrity check: $file"
+    fi
+    
+    local actual_hash=$(sha256sum "$file" | cut -d' ' -f1)
+    if [[ -n "$expected_hash" && "$actual_hash" != "$expected_hash" ]]; then
+        # Try to download hash file if available
+        local hash_url=""
+        case "$component" in
+            "monero")
+                hash_url="https://www.getmonero.org/downloads/hashes.txt"
+                ;;
+            "p2pool")
+                hash_url="https://github.com/SChernykh/p2pool/releases/latest/download/SHA256SUMS"
+                ;;
+        esac
+        
+        if [[ -n "$hash_url" ]]; then
+            log "Downloading hash file from: $hash_url"
+            if wget -q -O "/tmp/hashes.txt" "$hash_url"; then
+                local verified_hash=$(grep "$(basename "$file")" "/tmp/hashes.txt" | cut -d' ' -f1)
+                if [[ "$actual_hash" == "$verified_hash" ]]; then
+                    log "Hash verified against official hash file"
+                    return 0
+                fi
+            fi
+        fi
+        
+        error "Hash verification failed for $file"
+    else
+        log "Hash verified for $file"
+    fi
+}
+
+# Version comparison helper
+version_greater_equal() {
+    printf '%s\n%s\n' "$2" "$1" | sort -V -C
+}
+
+# Verify all required dependencies
+verify_dependencies() {
+    log "==> Verifying build dependencies..."
+    
+    # Check GCC version
+    if ! command -v gcc &>/dev/null; then
+        error "GCC not found. Please install build-essential"
+    fi
+    GCC_VERSION=$(gcc --version | head -n1 | grep -oP '\d+\.\d+\.\d+' | head -1)
+    if ! version_greater_equal "$GCC_VERSION" "$MIN_GCC_VERSION"; then
+        error "GCC version $GCC_VERSION is too old. Need $MIN_GCC_VERSION or newer"
+    fi
+    log "GCC version $GCC_VERSION - OK"
+    
+    # Check CMake version
+    if ! command -v cmake &>/dev/null; then
+        error "CMake not found. Please install cmake"
+    fi
+    CMAKE_VERSION=$(cmake --version | head -n1 | grep -oP '\d+\.\d+\.\d+')
+    if ! version_greater_equal "$CMAKE_VERSION" "$MIN_CMAKE_VERSION"; then
+        error "CMake version $CMAKE_VERSION is too old. Need $MIN_CMAKE_VERSION or newer"
+    fi
+    log "CMake version $CMAKE_VERSION - OK"
+    
+    # Check OpenSSL version
+    if ! command -v openssl &>/dev/null; then
+        error "OpenSSL not found. Please install libssl-dev"
+    fi
+    OPENSSL_VERSION=$(openssl version | grep -oP '\d+\.\d+\.\d+')
+    if ! version_greater_equal "$OPENSSL_VERSION" "$MIN_OPENSSL_VERSION"; then
+        error "OpenSSL version $OPENSSL_VERSION is too old. Need $MIN_OPENSSL_VERSION or newer"
+    fi
+    log "OpenSSL version $OPENSSL_VERSION - OK"
+    
+    # Check other essential tools
+    local tools=("git" "curl" "wget" "jq" "tar" "make")
+    for tool in "${tools[@]}"; do
+        if ! command -v "$tool" &>/dev/null; then
+            error "$tool not found. Please install $tool"
+        fi
+    done
+    log "All required tools available"
+}
+
+# Verify system state and requirements
+verify_system_state() {
+    log "==> Verifying system state..."
+    
+    # Check disk space
+    local required_space=20000000  # 20GB in KB
+    local available_space=$(df -k . | awk 'NR==2 {print $4}')
+    if [[ "$available_space" -lt "$required_space" ]]; then
+        error "Insufficient disk space. Need at least 20GB free"
+    fi
+    
+    # Check memory
+    local total_mem=$(free -m | awk '/^Mem:/{print $2}')
+    if [[ "$total_mem" -lt 4096 ]]; then
+        error "Insufficient memory. Need at least 4GB RAM"
+    fi
+    
+    # Check if system is Ubuntu 24.04
+    if [[ -f /etc/os-release ]]; then
+        source /etc/os-release
+        if [[ "$VERSION_ID" != "24.04" ]]; then
+            warning "System is not Ubuntu 24.04 (detected: $PRETTY_NAME)"
+            if ! confirm "Continue anyway?" "n"; then
+                error "Installation cancelled - unsupported system version"
+            fi
+        fi
+    fi
+    
+    # Check CPU capabilities
+    if ! grep -q "avx2" /proc/cpuinfo; then
+        warning "CPU does not support AVX2 - mining performance will be reduced"
+    fi
+    
+    # Check if running as root
+    if [[ $EUID -eq 0 ]]; then
+        error "This script should not be run as root"
+    fi
+    
+    # Check sudo access
+    if ! sudo -n true 2>/dev/null; then
+        error "Sudo access required but not available"
+    fi
+    
+    log "System state verification completed"
+}
+
+# Cleanup previous installation
+cleanup_previous_install() {
+    log "==> Cleaning up previous installation..."
+    
+    # Stop services if running
+    local services=("xmrig" "p2pool" "monerod" "xmrig_exporter" "node_exporter")
+    for service in "${services[@]}"; do
+        if systemctl is-active --quiet "$service"; then
+            log "Stopping $service service..."
+            sudo systemctl stop "$service"
+            sleep 2
+        fi
+    done
+    
+    # Remove old directories
+    local dirs=("$XMRIG_DIR" "$P2POOL_DIR" "$CONFIG_DIR")
+    for dir in "${dirs[@]}"; do
+        if [[ -d "$dir" ]]; then
+            log "Removing $dir..."
+            rm -rf "$dir"
+        fi
+    done
+    
+    # Clean up systemd services
+    local service_files=("xmrig.service" "p2pool.service" "monerod.service" 
+                        "xmrig_exporter.service" "node_exporter.service")
+    for service in "${service_files[@]}"; do
+        if [[ -f "/etc/systemd/system/$service" ]]; then
+            log "Removing systemd service: $service..."
+            sudo systemctl disable "$service" 2>/dev/null || true
+            sudo rm "/etc/systemd/system/$service"
+        fi
+    done
+    
+    # Clean up temporary files
+    rm -f /tmp/monero.tar.bz2 /tmp/p2pool.tar.gz 2>/dev/null || true
+    
+    sudo systemctl daemon-reload
+    log "Cleanup completed"
+}
 
 # Check if wallet address has been configured
 check_wallet_address() {
@@ -255,13 +478,13 @@ verify_donation_level() {
     fi
 }
 
-# Check if running as root
-if [[ $EUID -eq 0 ]]; then
-    error "This script should not be run as root"
-fi
-
 # Initialize log
 echo "XMRig + P2Pool Installation Log - $(date)" > "$LOG_FILE"
+
+# Run initial verifications
+verify_dependencies
+verify_system_state
+cleanup_previous_install
 
 log "==> Starting XMRig + P2Pool Production Installation"
 log "This will install:"
@@ -443,9 +666,34 @@ if [[ -d "$MONERO_DIR" ]]; then
 fi
         
 cd /tmp
-wget -O monero.tar.bz2 "https://downloads.getmonero.org/cli/monero-linux-x64-${MONERO_VERSION}.tar.bz2" || error "Failed to download Monero"
-tar -xf monero.tar.bz2 || error "Failed to extract Monero"
-mv monero-x86_64-linux-gnu-${MONERO_VERSION} "$MONERO_DIR" || error "Failed to move Monero"
+
+# Download Monero with retry and verification
+MONERO_ARCHIVE="monero-linux-x64-${MONERO_VERSION}.tar.bz2"
+MONERO_URL="https://downloads.getmonero.org/cli/${MONERO_ARCHIVE}"
+
+log "Downloading Monero ${MONERO_VERSION}..."
+if ! download_with_retry "$MONERO_URL" "monero.tar.bz2" "monero"; then
+    error "Failed to download Monero"
+fi
+
+# Verify download integrity
+verify_download_integrity "monero.tar.bz2" "" "monero"
+
+# Extract and install
+log "Extracting Monero..."
+if ! tar -xf monero.tar.bz2; then
+    error "Failed to extract Monero"
+fi
+
+if ! mv monero-x86_64-linux-gnu-${MONERO_VERSION} "$MONERO_DIR"; then
+    error "Failed to move Monero"
+fi
+
+# Verify binary
+if ! "$MONERO_DIR/monerod" --version >/dev/null 2>&1; then
+    error "Monero binary verification failed"
+fi
+log "Monero binary verified"
 
 verify_directory "$MONERO_DIR" "Monero directory"
 verify_file "$MONERO_DIR/monerod" "Monero daemon"
@@ -506,9 +754,33 @@ case $ARCH in
     *) error "Unsupported architecture: $ARCH" ;;
 esac
 
-wget -O p2pool.tar.gz "https://github.com/SChernykh/p2pool/releases/download/${P2POOL_LATEST}/p2pool-${P2POOL_LATEST}-linux-${P2POOL_ARCH}.tar.gz" || error "Failed to download P2Pool"
-tar -xf p2pool.tar.gz || error "Failed to extract P2Pool"
-mv p2pool-* "$P2POOL_DIR" || error "Failed to move P2Pool"
+# Download P2Pool with retry and verification
+P2POOL_ARCHIVE="p2pool-${P2POOL_LATEST}-linux-${P2POOL_ARCH}.tar.gz"
+P2POOL_URL="https://github.com/SChernykh/p2pool/releases/download/${P2POOL_LATEST}/${P2POOL_ARCHIVE}"
+
+log "Downloading P2Pool ${P2POOL_LATEST}..."
+if ! download_with_retry "$P2POOL_URL" "p2pool.tar.gz" "p2pool"; then
+    error "Failed to download P2Pool"
+fi
+
+# Verify download integrity
+verify_download_integrity "p2pool.tar.gz" "" "p2pool"
+
+# Extract and install
+log "Extracting P2Pool..."
+if ! tar -xf p2pool.tar.gz; then
+    error "Failed to extract P2Pool"
+fi
+
+if ! mv p2pool-* "$P2POOL_DIR"; then
+    error "Failed to move P2Pool"
+fi
+
+# Verify binary
+if ! "$P2POOL_DIR/p2pool" --version >/dev/null 2>&1; then
+    error "P2Pool binary verification failed"
+fi
+log "P2Pool binary verified"
 
 verify_directory "$P2POOL_DIR" "P2Pool directory"
 verify_file "$P2POOL_DIR/p2pool" "P2Pool binary"
