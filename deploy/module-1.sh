@@ -1128,6 +1128,82 @@ EOF
     success "Thermal monitoring configured"
 }
 
+configure_headless_boot() {
+    section "Configuring Headless Boot"
+    
+    info "Configuring GRUB for headless operation..."
+    
+    # Backup original GRUB config
+    if [[ -f /etc/default/grub ]]; then
+        sudo cp /etc/default/grub /etc/default/grub.backup
+        success "GRUB configuration backed up"
+    fi
+    
+    # Add or update necessary GRUB parameters
+    local grub_params=(
+        'GRUB_CMDLINE_LINUX="nomodeset console=tty1 console=ttyS0,115200n8"'
+        'GRUB_TERMINAL="console serial"'
+        'GRUB_SERIAL_COMMAND="serial --speed=115200 --unit=0 --word=8 --parity=no --stop=1"'
+        'GRUB_TIMEOUT=1'
+        'GRUB_RECORDFAIL_TIMEOUT=1'
+    )
+    
+    info "Updating GRUB parameters..."
+    for param in "${grub_params[@]}"; do
+        local key="${param%%=*}"
+        if grep -q "^#*${key}=" /etc/default/grub; then
+            # Replace existing line (commented or not)
+            sudo sed -i "s|^#*${key}=.*|${param}|" /etc/default/grub
+        else
+            # Add new line if not exists
+            echo "${param}" | sudo tee -a /etc/default/grub >/dev/null
+        fi
+    done
+    
+    # Update GRUB
+    info "Applying GRUB configuration..."
+    if ! sudo update-grub; then
+        error "Failed to update GRUB configuration"
+        exit 1
+    fi
+    success "GRUB configured for headless operation"
+    
+    # Configure systemd to not wait for a display manager
+    info "Configuring systemd display settings..."
+    if [[ -d /etc/systemd/system ]]; then
+        # Create override directory if it doesn't exist
+        sudo mkdir -p /etc/systemd/system/display-manager.service.d/
+        
+        # Create override file
+        cat << 'EOF' | sudo tee /etc/systemd/system/display-manager.service.d/override.conf > /dev/null
+[Unit]
+Conflicts=
+After=
+RequiresMountsFor=
+
+[Service]
+ExecStart=
+ExecStart=/bin/true
+Type=oneshot
+RemainAfterExit=yes
+EOF
+        
+        success "Systemd display manager overrides configured"
+    fi
+    
+    # Disable any existing display manager
+    local display_managers=("gdm" "gdm3" "lightdm" "sddm")
+    for dm in "${display_managers[@]}"; do
+        if systemctl is-enabled --quiet "$dm" 2>/dev/null; then
+            info "Disabling display manager: $dm"
+            sudo systemctl disable "$dm"
+            sudo systemctl mask "$dm"
+        fi
+    done
+    
+    success "System configured for headless operation"
+}
+
 prepare_for_module2() {
     section "Preparing for Module-2 Execution"
     
@@ -1301,6 +1377,7 @@ main() {
     info "• Apply system optimizations"
     info "• Configure memory settings"
     info "• Apply CPU optimizations"
+    info "• Configure headless boot"
     
     # Execute all functions in sequence
     verify_root_access
@@ -1314,6 +1391,7 @@ main() {
     configure_huge_pages
     apply_cpu_optimizations
     setup_thermal_monitoring
+    configure_headless_boot
     
     # Final verification before reboot
     verify_headless_readiness
