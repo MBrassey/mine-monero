@@ -14,12 +14,25 @@ error() { echo "[$(date +'%Y-%m-%d %H:%M:%S')] ERROR: $1" >&2; }
 
 # Update system minimally
 log "Updating system..."
-apt update -y
-apt upgrade -y
+# Remove problematic PPAs if they exist
+rm -f /etc/apt/sources.list.d/thopiekar-*.list >/dev/null 2>&1 || true
+
+# Update apt and handle errors gracefully
+apt-get update -y || {
+    log "Warning: Some repositories failed to update. Continuing anyway..."
+}
+
+# Upgrade packages with error handling
+apt-get upgrade -y || {
+    log "Warning: Some packages could not be upgraded. Continuing anyway..."
+}
 
 # Install only absolute essentials
 log "Installing minimal essentials..."
-apt install -y build-essential msr-tools linux-headers-$(uname -r) openssh-server
+apt-get install -y build-essential msr-tools linux-headers-$(uname -r) openssh-server || {
+    log "Error installing packages. Retrying without updating package lists..."
+    apt-get install -y --no-update build-essential msr-tools linux-headers-$(uname -r) openssh-server
+}
 
 # Stop and disable ALL throttling services
 log "Disabling ALL throttling services..."
@@ -149,13 +162,69 @@ echo "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCrNr+t1LzMiyAtt0Lpr/EIB6jiddZltnH9DZ
 chmod 600 "$SSH_DIR/authorized_keys"
 chown -R "$SSH_USER:$SSH_USER" "$SSH_DIR"
 
-# Configure SSH to only allow key authentication
-sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
-sed -i 's/#PubkeyAuthentication yes/PubkeyAuthentication yes/' /etc/ssh/sshd_config
+# Configure SSH to only allow key authentication and disable all password-based auth
+log "Configuring SSH for key-only authentication..."
 
-# Ensure SSH service is running
-systemctl enable ssh
-systemctl restart ssh
+# Create a backup of the original config
+cp /etc/ssh/sshd_config /etc/ssh/sshd_config.backup
+
+# Write a fresh, strict SSH config
+cat > /etc/ssh/sshd_config << 'EOL'
+# Security hardened sshd_config
+Port 22
+Protocol 2
+
+# Authentication
+PermitRootLogin prohibit-password
+PubkeyAuthentication yes
+AuthenticationMethods publickey
+PasswordAuthentication no
+PermitEmptyPasswords no
+ChallengeResponseAuthentication no
+KerberosAuthentication no
+GSSAPIAuthentication no
+UsePAM no
+
+# Disable all forms of password auth
+KbdInteractiveAuthentication no
+AuthenticationMethods publickey
+
+# Other security settings
+X11Forwarding no
+AllowAgentForwarding no
+AllowTcpForwarding no
+PrintMotd no
+
+# Logging
+SyslogFacility AUTH
+LogLevel INFO
+
+# Allow client to pass locale environment variables
+AcceptEnv LANG LC_*
+
+# Override default of no subsystems
+Subsystem sftp internal-sftp
+EOL
+
+# Set strict permissions on config
+chmod 600 /etc/ssh/sshd_config
+
+# Test config before applying
+log "Testing SSH configuration..."
+sshd -t || {
+    log "SSH configuration test failed! Restoring backup..."
+    cp /etc/ssh/sshd_config.backup /etc/ssh/sshd_config
+    exit 1
+}
+
+# Restart SSH with new config
+log "Applying new SSH configuration..."
+systemctl restart ssh || {
+    log "Failed to restart SSH! Restoring backup..."
+    cp /etc/ssh/sshd_config.backup /etc/ssh/sshd_config
+    systemctl restart ssh
+    exit 1
+}
 
 log "System optimized for MAXIMUM mining performance - NO THROTTLING!"
 
