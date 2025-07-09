@@ -110,9 +110,23 @@ done
 
 # Update udev rules with correct paths
 log "Updating udev rules..."
+# Remove any existing rules first
+rm -f /etc/udev/rules.d/60-openrgb.rules
+rm -f /usr/lib/udev/rules.d/60-openrgb.rules
+
+# Install new rules
 mkdir -p /usr/lib/udev/rules.d/
 cp 60-openrgb.rules /usr/lib/udev/rules.d/60-openrgb.rules
 chmod 644 /usr/lib/udev/rules.d/60-openrgb.rules
+
+# Fix any double-slash paths
+for file in /usr/bin/openrgb /usr/share/applications/org.openrgb.OpenRGB.desktop /usr/share/icons/hicolor/128x128/apps/org.openrgb.OpenRGB.png /usr/share/metainfo/org.openrgb.OpenRGB.metainfo.xml; do
+    if [ -e "/${file}" ]; then
+        mv "/${file}" "${file}"
+    fi
+done
+
+# Reload udev
 udevadm control --reload-rules
 udevadm trigger
 
@@ -130,7 +144,7 @@ Type=Application
 Categories=Utility;
 EOF
 
-# Update systemd service
+# Update systemd service with proper permissions
 log "Updating systemd service..."
 cat > /etc/systemd/system/openrgb.service << EOF
 [Unit]
@@ -144,6 +158,11 @@ Restart=on-failure
 RestartSec=3
 User=root
 Environment=DISPLAY=:0
+# Add proper device permissions
+SupplementaryGroups=i2c input
+# Add proper capabilities
+AmbientCapabilities=CAP_SYS_RAWIO
+NoNewPrivileges=true
 
 [Install]
 WantedBy=multi-user.target
