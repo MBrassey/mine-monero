@@ -3,9 +3,9 @@
 # Check if running with sudo
 if [ "$EUID" -ne 0 ]; then
     echo "Run with sudo"
-    exit 1
-fi
-
+        exit 1
+    fi
+    
 # Basic logging
 log() { echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1"; }
 error() { echo "[$(date +'%Y-%m-%d %H:%M:%S')] ERROR: $1" >&2; }
@@ -32,10 +32,10 @@ apt update
 apt install -y \
     i2c-tools \
     wget
-
-# Load required kernel modules
+    
+    # Load required kernel modules
 log "Loading kernel modules..."
-modprobe i2c-dev
+        modprobe i2c-dev
 modprobe i2c-piix4
 modprobe i2c-i801
 
@@ -64,11 +64,11 @@ SUBSYSTEMS=="usb", ATTR{idVendor}=="125F", MODE="0666"
 # I2C/SMBus Access
 KERNEL=="i2c-[0-9]*", GROUP="i2c", MODE="0666"
 EOF
-
-# Reload udev rules
-udevadm control --reload-rules
-udevadm trigger
-
+    
+    # Reload udev rules
+    udevadm control --reload-rules
+    udevadm trigger
+    
 # Install OpenRGB
 log "Installing OpenRGB..."
 cd /tmp
@@ -107,7 +107,7 @@ WantedBy=multi-user.target
 EOF
 
 # Enable and start OpenRGB service
-systemctl daemon-reload
+    systemctl daemon-reload
 systemctl enable openrgb
 systemctl start openrgb
 
