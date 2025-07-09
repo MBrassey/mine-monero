@@ -136,7 +136,48 @@ for dir in "/root/.config/OpenRGB" "/home/$SUDO_USER/.config/OpenRGB"; do
     fi
 done
 
-# Create a valid profile with proper header
+# Update systemd service to handle server properly
+cat > /etc/systemd/system/openrgb.service << EOF
+[Unit]
+Description=OpenRGB LED Control
+After=multi-user.target systemd-modules-load.service
+Wants=modprobe@i2c_dev.service modprobe@i2c_piix4.service modprobe@i2c_i801.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+# Wait for USB and I2C devices to settle
+ExecStartPre=/bin/sleep 5
+ExecStartPre=/usr/bin/killall openrgb || true
+
+# Load required modules with options
+ExecStartPre=/sbin/modprobe i2c_dev
+ExecStartPre=/sbin/modprobe i2c_piix4 force=1
+ExecStartPre=/sbin/modprobe i2c_i801 force_addr=1
+
+# Set permissions for devices
+ExecStartPre=/bin/sh -c 'for i in \$(seq 0 9); do if [ -e "/dev/i2c-\$i" ]; then chmod 666 "/dev/i2c-\$i"; fi; done'
+ExecStartPre=/bin/sh -c 'for dev in /dev/hidraw*; do chmod 666 "\$dev"; done'
+
+# Start OpenRGB with retries
+ExecStart=/bin/bash -c 'for i in {1..5}; do /usr/bin/openrgb --server --nodetect --profile default && break || sleep 2; done'
+
+# Restart settings
+Restart=on-failure
+RestartSec=3
+StartLimitBurst=10
+
+User=root
+Environment=DISPLAY=:0
+SupplementaryGroups=i2c input video plugdev
+AmbientCapabilities=CAP_SYS_RAWIO CAP_SYS_ADMIN CAP_IPC_LOCK
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Create a valid profile with proper header and all devices
 cat > /root/.config/OpenRGB/default.orp << EOF
 {
     "header": {
@@ -149,9 +190,6 @@ cat > /root/.config/OpenRGB/default.orp << EOF
             "name": "ASRock B650M PG Lightning WiFi",
             "type": "Motherboard",
             "description": "ASRock Polychrome USB Device",
-            "version": "",
-            "serial": "",
-            "location": "HID: /dev/hidraw0",
             "vendor": "ASRock",
             "active_mode": "Static",
             "modes": [
@@ -162,39 +200,61 @@ cat > /root/.config/OpenRGB/default.orp << EOF
                     "colors": ["${TARGET_COLOR}"]
                 }
             ],
+            "colors": ["${TARGET_COLOR}"],
+            "zones": [
+                {
+                    "name": "RGB LED 1 Header",
+                    "colors": ["${TARGET_COLOR}"]
+                },
+                {
+                    "name": "Addressable Header 1",
+                    "colors": ["${TARGET_COLOR}"]
+                },
+                {
+                    "name": "Addressable Header 2",
+                    "colors": ["${TARGET_COLOR}"]
+                },
+                {
+                    "name": "PCB",
+                    "colors": ["${TARGET_COLOR}"]
+                },
+                {
+                    "name": "Addressable Header 3/Audio",
+                    "colors": ["${TARGET_COLOR}"]
+                }
+            ]
+        },
+        {
+            "name": "AMD Wraith Prism",
+            "type": "Cooler",
+            "active_mode": "Static",
+            "modes": [
+                {
+                    "name": "Static",
+                    "colors": ["${TARGET_COLOR}"]
+                }
+            ],
+            "colors": ["${TARGET_COLOR}"]
+        },
+        {
+            "name": "XPG SPECTRIX",
+            "type": "Storage",
+            "active_mode": "Static",
+            "modes": [
+                {
+                    "name": "Static",
+                    "colors": ["${TARGET_COLOR}"]
+                }
+            ],
             "colors": ["${TARGET_COLOR}"]
         }
     ]
 }
 EOF
 
-# Copy profile to user directory and set permissions
+# Copy profile to user directory
 cp -f /root/.config/OpenRGB/default.orp "/home/$SUDO_USER/.config/OpenRGB/"
 chown -R "$SUDO_USER:$SUDO_USER" "/home/$SUDO_USER/.config/OpenRGB"
-
-# Update systemd service
-cat > /etc/systemd/system/openrgb.service << EOF
-[Unit]
-Description=OpenRGB LED Control
-After=multi-user.target
-Wants=modprobe@i2c_dev.service modprobe@i2c_piix4.service modprobe@i2c_i801.service
-
-[Service]
-Type=simple
-ExecStartPre=/bin/sleep 2
-ExecStartPre=/usr/bin/killall openrgb || true
-ExecStart=/usr/bin/openrgb --server --profile default
-Restart=on-failure
-RestartSec=3
-User=root
-Environment=DISPLAY=:0
-SupplementaryGroups=i2c input video plugdev
-AmbientCapabilities=CAP_SYS_RAWIO CAP_SYS_ADMIN CAP_IPC_LOCK
-NoNewPrivileges=true
-
-[Install]
-WantedBy=multi-user.target
-EOF
 
 # Reload systemd and restart service
 systemctl daemon-reload
@@ -204,7 +264,7 @@ systemctl restart openrgb
 # Wait for service to initialize
 sleep 5
 
-# Show current status
+# Verify current status
 echo
 echo "Current OpenRGB device status:"
 openrgb --nodetect --list-devices
