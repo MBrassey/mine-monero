@@ -154,7 +154,7 @@ for i in $(seq 0 9); do
     fi
 done
 
-# Create udev rules for SMBus/I2C access
+# Create comprehensive udev rules for SMBus/I2C access
 cat > /etc/udev/rules.d/99-i2c.rules << EOF
 # Give permissions to the i2c bus
 KERNEL=="i2c-[0-9]*", GROUP="i2c", MODE="0666"
@@ -168,12 +168,9 @@ SUBSYSTEM=="i2c-dev", DRIVER=="i801_smbus", GROUP="i2c", MODE="0666"
 # Generic I2C
 SUBSYSTEM=="i2c-dev", GROUP="i2c", MODE="0666"
 
-# AMD Wraith Prism (both USB and direct modes)
+# AMD Wraith Prism
 SUBSYSTEMS=="usb", ATTR{idVendor}=="2516", ATTR{idProduct}=="0051", MODE="0666"
 SUBSYSTEMS=="usb", ATTR{idVendor}=="2516", ATTR{idProduct}=="0047", MODE="0666"
-# AMD Wraith Prism via motherboard USB header
-SUBSYSTEM=="usb", ATTRS{idVendor}=="2516", MODE="0666"
-KERNEL=="hidraw*", ATTRS{idVendor}=="2516", MODE="0666"
 
 # XPG/ADATA Products
 SUBSYSTEMS=="usb", ATTR{idVendor}=="125f", MODE="0666"
@@ -216,59 +213,53 @@ echo "Setting all devices to color #${TARGET_COLOR}..."
 killall openrgb 2>/dev/null || true
 sleep 2
 
+# Start fresh OpenRGB server
+openrgb --server &
+sleep 3
+
 # Set each device individually
 echo "Setting RAM modules..."
 openrgb --device 0 --mode direct --color ${TARGET_COLOR}
 openrgb --device 1 --mode direct --color ${TARGET_COLOR}
 sleep 1
 
-echo "Setting motherboard and connected devices..."
-# First set the main motherboard
+echo "Setting motherboard..."
+# Try different modes for the motherboard
 openrgb --device 2 --mode direct --color ${TARGET_COLOR}
 sleep 1
-
-# Now set each addressable header individually
-echo "Setting Addressable Headers..."
-# CPU Cooler is on ADDR_LED3
-openrgb --device 2 --zone 4 --mode direct --color ${TARGET_COLOR}
+openrgb --device 2 --mode static --color ${TARGET_COLOR}
 sleep 1
 
-# Try other headers for the XPG NVMe
-echo "Setting other headers (for XPG NVMe)..."
-openrgb --device 2 --zone 1 --mode direct --color ${TARGET_COLOR}
-openrgb --device 2 --zone 2 --mode direct --color ${TARGET_COLOR}
-sleep 1
-
-# Set PCB LEDs
-echo "Setting motherboard PCB LEDs..."
-openrgb --device 2 --zone 3 --mode direct --color ${TARGET_COLOR}
-sleep 1
-
-# Set RGB LED header
-echo "Setting RGB LED header..."
-openrgb --device 2 --zone 0 --mode direct --color ${TARGET_COLOR}
-sleep 1
-
-# Try different modes for all zones
-echo "Setting all zones with different modes..."
-for mode in direct static; do
-    echo "Trying mode: $mode"
-    # Set all motherboard zones
-    openrgb --device 2 --mode $mode --color ${TARGET_COLOR}
-    sleep 1
+# Try to detect and set AMD Wraith Prism
+echo "Setting CPU Cooler..."
+for i in {3..5}; do
+    if openrgb --device $i 2>/dev/null | grep -q "AMD"; then
+        echo "Found AMD Wraith Prism at device $i"
+        openrgb --device $i --mode direct --color ${TARGET_COLOR}
+        openrgb --device $i --mode static --color ${TARGET_COLOR}
+        break
+    fi
 done
 
-# Show current status
-echo "Currently detected devices and their status:"
-openrgb --list-devices
+# Try to detect and set XPG SPECTRIX
+echo "Setting M.2 SSD..."
+for i in {3..5}; do
+    if openrgb --device $i 2>/dev/null | grep -q "XPG"; then
+        echo "Found XPG SPECTRIX at device $i"
+        openrgb --device $i --mode direct --color ${TARGET_COLOR}
+        openrgb --device $i --mode static --color ${TARGET_COLOR}
+        break
+    fi
+done
 
-# Check if we found the CPU cooler
-if ! grep -qi "AMD\|Wraith\|CM" /tmp/openrgb.log; then
-    echo "Warning: AMD Wraith Prism not detected. Please check:"
-    echo "1. The USB header connection (currently on ADDR_LED3)"
-    echo "2. Try moving it to a different USB header"
-    echo "3. Make sure both USB and RGB cables are connected"
-fi
+# Set all devices together with different modes
+echo "Setting all devices together..."
+modes=("direct" "static")
+for mode in "${modes[@]}"; do
+    echo "Trying mode: $mode"
+    openrgb --mode $mode --color ${TARGET_COLOR}
+    sleep 1
+done
 
 # Create a profile for the current settings
 echo "Creating default color profile..."
@@ -310,20 +301,7 @@ cat > /root/.config/OpenRGB/default.orp << EOF
             "name": "AMD Wraith Prism",
             "type": "Cooler",
             "mode": "Direct",
-            "zones": [
-                {
-                    "name": "Fan",
-                    "color": "${TARGET_COLOR}"
-                },
-                {
-                    "name": "Ring",
-                    "color": "${TARGET_COLOR}"
-                },
-                {
-                    "name": "Logo",
-                    "color": "${TARGET_COLOR}"
-                }
-            ]
+            "colors": ["${TARGET_COLOR}"]
         },
         {
             "name": "XPG SPECTRIX",
@@ -335,7 +313,7 @@ cat > /root/.config/OpenRGB/default.orp << EOF
 }
 EOF
 
-# Update systemd service to handle all zones
+# Update systemd service to load profile and ensure USB device access
 log "Updating systemd service..."
 cat > /etc/systemd/system/openrgb.service << EOF
 [Unit]
@@ -344,8 +322,7 @@ After=multi-user.target
 Wants=modprobe@i2c_dev.service modprobe@i2c_piix4.service modprobe@i2c_i801.service
 
 [Service]
-Type=oneshot
-RemainAfterExit=yes
+Type=simple
 # Load required modules with options
 ExecStartPre=/sbin/modprobe i2c_dev
 ExecStartPre=/sbin/modprobe i2c_piix4 force=1
@@ -353,17 +330,10 @@ ExecStartPre=/sbin/modprobe i2c_i801 force_addr=1
 # Set permissions for all possible devices
 ExecStartPre=/bin/sh -c 'for i in \$(seq 0 9); do if [ -e "/dev/i2c-\$i" ]; then chmod 666 "/dev/i2c-\$i"; fi; done'
 ExecStartPre=/bin/sh -c 'for dev in /dev/hidraw*; do chmod 666 "\$dev"; done'
-# Set RAM colors
-ExecStart=/usr/bin/openrgb --device 0 --mode direct --color ${TARGET_COLOR}
-ExecStart=/usr/bin/openrgb --device 1 --mode direct --color ${TARGET_COLOR}
-# Set motherboard and all headers
-ExecStart=/usr/bin/openrgb --device 2 --mode direct --color ${TARGET_COLOR}
-# Set specific zones
-ExecStart=/usr/bin/openrgb --device 2 --zone 4 --mode direct --color ${TARGET_COLOR}
-ExecStart=/usr/bin/openrgb --device 2 --zone 1 --mode direct --color ${TARGET_COLOR}
-ExecStart=/usr/bin/openrgb --device 2 --zone 2 --mode direct --color ${TARGET_COLOR}
-ExecStart=/usr/bin/openrgb --device 2 --zone 3 --mode direct --color ${TARGET_COLOR}
-ExecStart=/usr/bin/openrgb --device 2 --zone 0 --mode direct --color ${TARGET_COLOR}
+# Start OpenRGB and load profile
+ExecStart=/usr/bin/openrgb --server --profile default
+Restart=on-failure
+RestartSec=3
 User=root
 Environment=DISPLAY=:0
 # Add proper device permissions
