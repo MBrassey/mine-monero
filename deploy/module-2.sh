@@ -29,18 +29,9 @@ echo
 # Install dependencies
 log "Installing dependencies..."
 apt update
-# Install Qt6 build dependencies (Ubuntu 24.04 uses Qt6)
 apt install -y \
     i2c-tools \
-    build-essential \
-    git \
-    pkg-config \
-    libusb-1.0-0-dev \
-    libhidapi-dev \
-    libmbedtls-dev \
-    qt6-base-dev \
-    qt6-base-dev-tools \
-    qt6-base-private-dev
+    software-properties-common
 
 # Load required kernel modules
 log "Loading kernel modules..."
@@ -78,23 +69,33 @@ EOF
 udevadm control --reload-rules
 udevadm trigger
 
-# Install OpenRGB from source
-log "Installing OpenRGB from source..."
-cd /tmp
-rm -rf OpenRGB
-git clone https://gitlab.com/CalcProgrammer1/OpenRGB
-cd OpenRGB
-
-# Build with Qt6 qmake
-log "Building OpenRGB..."
-/usr/lib/qt6/bin/qmake6 OpenRGB.pro
-make -j$(nproc)
-
 # Install OpenRGB
 log "Installing OpenRGB..."
-mkdir -p /usr/local/bin
-cp openrgb /usr/local/bin/
-chmod +x /usr/local/bin/openrgb
+
+# Try PPA first
+if ! add-apt-repository -y ppa:thopiekar/openrgb; then
+    # If PPA fails, use AppImage
+    log "PPA installation failed, using AppImage instead..."
+    cd /tmp
+    wget https://openrgb.org/releases/release_0.9/OpenRGB_0.9_x86_64_6128731.AppImage
+    chmod +x OpenRGB_0.9_x86_64_6128731.AppImage
+    mv OpenRGB_0.9_x86_64_6128731.AppImage /usr/local/bin/openrgb
+    # Create desktop entry
+    cat > /usr/share/applications/openrgb.desktop << EOF
+[Desktop Entry]
+Name=OpenRGB
+Comment=RGB Control Utility
+Exec=/usr/local/bin/openrgb
+Icon=openrgb
+Terminal=false
+Type=Application
+Categories=Utility;
+EOF
+else
+    # Install from PPA if it was added successfully
+    apt update
+    apt install -y openrgb
+fi
 
 # Create OpenRGB systemd service
 log "Creating OpenRGB service..."
@@ -105,7 +106,7 @@ After=multi-user.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/openrgb --server --noautoconnect --brightness 100 --color ${TARGET_COLOR}
+ExecStart=/usr/bin/openrgb --server --noautoconnect --brightness 100 --color ${TARGET_COLOR}
 Restart=on-failure
 RestartSec=3
 
@@ -124,7 +125,7 @@ sleep 10
 
 # Set all devices to target color
 log "Setting all devices to target color..."
-if ! /usr/local/bin/openrgb --noautoconnect --brightness 100 --color ${TARGET_COLOR}; then
+if ! openrgb --noautoconnect --brightness 100 --color ${TARGET_COLOR}; then
     error "Failed to set RGB color. This might be normal on first boot."
     echo "Please reboot the system and the RGB settings will be applied."
 fi
