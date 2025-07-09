@@ -16,6 +16,12 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+# Check if running directly as root (not via sudo)
+if [ -z "$SUDO_USER" ]; then
+    echo "This script must be run with sudo, not as root directly"
+    exit 1
+fi
+
 # ================================
 # CONFIGURATION VARIABLES
 # ================================
@@ -89,21 +95,15 @@ confirm() {
 verify_root_access() {
     section "Verifying Root Access"
     
-    # Check if running as sudo
-    if [[ $EUID -eq 0 ]]; then
-       error "Script should not be run as root directly. Run with sudo from regular user account."
-       exit 1
-    fi
-
-    # Verify sudo access
+    # Check if we have sudo privileges
     if ! sudo -n true 2>/dev/null; then
         error "Script requires sudo access. Ensure user has sudo privileges."
         exit 1
     fi
     
     # Verify correct username
-    if [[ "$USER" != "ubuntu" ]]; then
-        error "Script must be run as user 'ubuntu'. Current user: $USER"
+    if [[ "$SUDO_USER" != "ubuntu" ]]; then
+        error "Script must be run as user 'ubuntu'. Current user: $SUDO_USER"
         exit 1
     fi
     
