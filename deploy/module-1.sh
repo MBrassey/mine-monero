@@ -523,7 +523,15 @@ configure_firewall() {
         success "UFW service already running"
     fi
     
-    info "Step 4/8: Resetting UFW to clean state..."
+    info "Step 4/8: Enabling UFW..."
+    if ! sudo ufw --force enable; then
+        error "Failed to enable UFW"
+        error "Command failed: sudo ufw --force enable"
+        exit 1
+    fi
+    success "UFW enabled successfully"
+    
+    info "Step 5/8: Resetting UFW to clean state..."
     if ! sudo ufw --force reset; then
         error "Failed to reset UFW"
         error "Command failed: sudo ufw --force reset"
@@ -531,7 +539,14 @@ configure_firewall() {
     fi
     success "UFW reset successfully"
     
-    info "Step 5/8: Setting default policies..."
+    # Re-enable after reset
+    if ! sudo ufw --force enable; then
+        error "Failed to re-enable UFW after reset"
+        exit 1
+    fi
+    success "UFW re-enabled after reset"
+    
+    info "Step 6/8: Setting default policies..."
     info "  • Setting default deny incoming..."
     if ! sudo ufw default deny incoming; then
         error "Failed to set default incoming policy"
@@ -545,10 +560,6 @@ configure_firewall() {
         exit 1
     fi
     success "Default outgoing policy set to allow"
-    
-    # Give UFW time to apply policies
-    info "  • Waiting for policies to take effect..."
-    sleep 2
     
     # Force UFW to reload policies
     info "  • Reloading UFW..."
@@ -566,7 +577,8 @@ configure_firewall() {
     
     while [[ $attempt -le $max_attempts ]]; do
         local ufw_status=$(sudo ufw status verbose)
-        if echo "$ufw_status" | grep -q "Default: deny (incoming)" && \
+        if echo "$ufw_status" | grep -q "Status: active" && \
+           echo "$ufw_status" | grep -q "Default: deny (incoming)" && \
            echo "$ufw_status" | grep -q "Default: allow (outgoing)"; then
             policies_verified=true
             break
@@ -585,7 +597,7 @@ configure_firewall() {
     
     success "Default policies configured and verified"
     
-    info "Step 6/8: Configuring firewall rules..."
+    info "Step 7/8: Configuring firewall rules..."
     
     # Array of rules to add
     declare -A firewall_rules=(
@@ -613,33 +625,9 @@ configure_firewall() {
         success "    ✓ Rule added: $desc"
     done
     
-    info "Step 7/8: Enabling UFW..."
-    if ! sudo ufw --force enable; then
-        error "Failed to enable UFW"
-        error "Command failed: sudo ufw --force enable"
-        exit 1
-    fi
-    success "UFW enabled successfully"
-    
-    info "Step 8/8: Verifying UFW status..."
-    # Try multiple times to verify UFW is active
-    local max_attempts=3
-    local attempt=1
-    local ufw_active=false
-    
-    while [[ $attempt -le $max_attempts ]]; do
-        if sudo ufw status | grep -q "Status: active"; then
-            ufw_active=true
-            break
-        fi
-        info "  • Attempt $attempt/$max_attempts: UFW not active yet, waiting..."
-        sudo systemctl restart ufw
-        sleep 5
-        ((attempt++))
-    done
-    
-    if ! $ufw_active; then
-        error "UFW failed to start after multiple attempts"
+    info "Step 8/8: Final verification..."
+    if ! sudo ufw status | grep -q "Status: active"; then
+        error "UFW is not active after configuration"
         error "Current UFW status:"
         sudo ufw status verbose
         error "Current UFW service status:"
