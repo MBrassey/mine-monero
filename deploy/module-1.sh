@@ -674,7 +674,7 @@ echo "Disk Usage: $(df -h / | awk 'NR==2{print $3"/"$2" ("$5")"}')"
 echo "Temperature: $(sensors 2>/dev/null | grep -E 'Core|Tctl' | head -1 || echo 'Not available')"
 echo "Network Interface: $(ip route | grep default | awk '{print $5}' | head -n1)"
 echo "SSH Status: $(systemctl is-active ssh)"
-echo "=== Ready for Module 2 Installation ==="
+echo "=== Ready for Module 3 Installation ==="
 EOF
 
     sudo chmod +x /usr/local/bin/system-info
@@ -1128,14 +1128,14 @@ configure_firewall() {
 }
 
 prepare_for_module2() {
-    section "Preparing for Module-2 Execution"
+    section "Preparing for Module-3 Execution"
     
     # Create mining user directories
     info "Creating mining directories..."
     mkdir -p ~/mining-setup
     mkdir -p ~/mining-logs
     
-    # Set execute permissions for module-2.sh if it exists
+    # Set execute permissions for module-3.sh if it exists
     if [[ -f "module-3.sh" ]]; then
         chmod +x module-3.sh
         success "Module-3.sh permissions set"
@@ -1168,8 +1168,7 @@ prompt_reboot() {
         info "System will reboot in 10 seconds..."
         info "After reboot:"
         info "  1. SSH back into system"
-        info "  2. Remove video card (if not done already)"
-        info "  3. Run module-3.sh for mining software installation"
+        info "  2. Run module-3.sh for mining software installation"
         echo ""
         sleep 10
         sudo reboot
@@ -1218,35 +1217,9 @@ main() {
     
     success "Module 1 installation completed successfully"
     
-    section "Preparing for Headless Operation"
-    info "IMPORTANT: System will now halt for video card removal"
-    info "1. System will shut down completely (all lights off)"
-    info "2. Remove the video card from the system"
-    info "3. Power the system back on"
-    info "4. Wait 2-3 minutes for full boot"
-    info "5. Connect via SSH: ssh $SUDO_USER@$ip_addr"
-    info "6. Then proceed with Module 2 installation"
-    
-    if confirm "Ready to halt system for video card removal?" "n"; then
-        local ip_addr=$(ip addr show "$PRIMARY_INTERFACE" | grep -oP 'inet \K[\d.]+')
-        echo ""
-        echo "!!! REMOVING VIDEO CARD PROCEDURE !!!"
-        echo "1. Wait for system to completely shut down"
-        echo "2. Remove power cable"
-        echo "3. Remove video card"
-        echo "4. Reconnect power cable"
-        echo "5. Power on system"
-        echo "6. Wait 2-3 minutes"
-        echo "7. SSH from another machine: ssh -i ~/.ssh/id_rsa $SUDO_USER@$ip_addr"
-        echo ""
-        warning "System halting in 10 seconds..."
-        sleep 10
-        sudo halt
-    else
-        warning "System will remain powered on with video card"
-        warning "You will need to manually halt and remove video card later"
-        warning "Use 'sudo halt' when ready to proceed with video card removal"
-    fi
+    # Prepare for next module and prompt for reboot
+    prepare_for_module2
+    prompt_reboot
 }
 
 # ================================
