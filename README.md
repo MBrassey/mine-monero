@@ -262,10 +262,10 @@ vim module-2.sh
    ./module-1.sh
    ```
    This script will:
-   - Enable SSH service with security hardening
-   - Add engineer public key to authorized_keys
-   - Configure huge pages and CPU optimizations
-   - Set up performance tuning
+   - Update and configure system packages
+   - Apply CPU and memory optimizations
+   - Configure SSH key authentication
+   - Create mining optimization service
    - **Prompt for system reboot** (required for optimal performance)
 
 **Step 10: Test SSH Access and Prepare for Headless Operation**
@@ -446,18 +446,21 @@ vim module-1.sh
 ```
 
 **What it does:**
-- Updates system packages and installs essential tools (bpytop, net-tools, jq, etc.)
-- Configures SSH access with security hardening and fail2ban protection
-- Sets up hardware optimizations:
-  - Huge pages (1GB and 2MB) for RandomX performance
-  - CPU register (MSR) optimizations
-  - IRQ affinity optimization (isolates system IRQs to cores 0-1)
-  - Performance optimization monitoring
-  - Performance governor settings and CPU tuning
-- Configures firewall (UFW) with mining network access and metrics ports
-- Disables unnecessary services (bluetooth, cups, avahi-daemon, snapd, etc.)
-- Creates system utilities (system-info command) and mining directories
-- Applies kernel-level optimizations for mining performance
+- Updates system packages and installs essential tools (build-essential, msr-tools)
+- Disables and removes system services that could impact performance (thermald, power-profiles-daemon, etc.)
+- Configures SSH with key-based authentication for secure remote access
+- Applies CPU optimizations:
+  - Sets CPU governor to "performance" mode
+  - Enables CPU boost
+  - Removes frequency limits
+  - Disables Intel pstate power saving
+- Configures memory optimizations:
+  - Sets vm.swappiness=1
+  - Configures huge pages (vm.nr_hugepages=6144)
+  - Optimizes memory management parameters
+  - Disables transparent huge pages
+- Applies MSR optimizations for all CPU cores
+- Creates a systemd service (mining-opt.service) to maintain optimizations across reboots
 - Requires system reboot after completion for full optimization
 
 ```bash
@@ -791,26 +794,20 @@ node_memory_MemAvailable_bytes
 - **24-168 hours**: First payout (share contribution dependent)
 - **Ongoing**: Regular payouts at ~0.00027 XMR threshold
 
-## Hardware Optimization
+### Hardware Optimization
 
 Modules automatically detect and optimize for specific hardware configuration:
-
-### Automatic Hardware Detection
-- **CPU**: Model, core count, frequency capabilities, NUMA topology
-- **Memory**: Speed (MT/s), rank configuration, bandwidth testing
-- **Storage**: Disk type and I/O scheduler optimization
 
 ### Applied Optimizations
 
 **Module-1 System Optimizations (require reboot):**
-- **Huge Pages**: 1GB and 2MB pages configured for maximum RandomX performance
-- **MSR Optimizations**: CPU register tuning for enhanced RandomX mining
-- **CPU Performance**: Governor set to "performance" mode (persistent)
-- **IRQ Affinity**: System interrupts isolated to cores 0-1, mining cores 2-31
-- **Memory Tuning**: Bandwidth, latency, and allocation optimizations
-- **Storage I/O**: mq-deadline scheduler for all storage devices
-- **Performance Management**: Advanced monitoring with frequency scaling
-- **System Services**: Unnecessary services disabled (bluetooth, cups, etc.)
+- **CPU Performance**: Governor set to "performance" mode with boost enabled
+- **Memory Tuning**: Swappiness, huge pages, and memory management optimizations
+- **MSR Optimizations**: CPU register tuning for enhanced performance
+- **Transparent Huge Pages**: Disabled for better performance
+- **System Services**: Unnecessary services disabled (thermald, power-profiles-daemon, etc.)
+- **SSH Security**: Key-based authentication configuration
+- **Persistent Settings**: Systemd service ensures optimizations persist across reboots
 
 **Module-3 Mining Optimizations (immediate):**
 - **XMRig Compilation**: Hardware-specific build with 0% donation
