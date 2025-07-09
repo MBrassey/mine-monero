@@ -29,7 +29,22 @@ echo
 # Install dependencies
 log "Installing dependencies..."
 apt update
-apt install -y i2c-tools build-essential git pkg-config libusb-1.0-0-dev libhidapi-dev libmbedtls-dev qt5-qmake qtbase5-dev qtchooser qt5-default libqt5core5a libqt5gui5 libqt5widgets5
+# Install Qt6 build dependencies (Ubuntu 24.04 uses Qt6)
+apt install -y \
+    i2c-tools \
+    build-essential \
+    git \
+    pkg-config \
+    libusb-1.0-0-dev \
+    libhidapi-dev \
+    libmbedtls-dev \
+    qt6-base-dev \
+    qt6-base-private-dev \
+    libqt6core6 \
+    libqt6gui6 \
+    libqt6widgets6 \
+    cmake \
+    ninja-build
 
 # Load required kernel modules
 log "Loading kernel modules..."
@@ -73,9 +88,14 @@ cd /tmp
 rm -rf OpenRGB
 git clone https://gitlab.com/CalcProgrammer1/OpenRGB
 cd OpenRGB
-qmake OpenRGB.pro
-make -j$(nproc)
-make install
+
+# Build with CMake (Qt6)
+log "Building OpenRGB..."
+mkdir -p build
+cd build
+cmake .. -GNinja -DCMAKE_BUILD_TYPE=Release
+ninja
+ninja install
 
 # Create OpenRGB systemd service
 log "Creating OpenRGB service..."
@@ -86,7 +106,7 @@ After=multi-user.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/openrgb --server --noautoconnect --brightness 100 --color ${TARGET_COLOR}
+ExecStart=/usr/local/bin/openrgb --server --noautoconnect --brightness 100 --color ${TARGET_COLOR}
 Restart=on-failure
 RestartSec=3
 
