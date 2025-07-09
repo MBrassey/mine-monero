@@ -154,7 +154,7 @@ for i in $(seq 0 9); do
     fi
 done
 
-# Create comprehensive udev rules for SMBus/I2C access
+# Create udev rules for SMBus/I2C access
 cat > /etc/udev/rules.d/99-i2c.rules << EOF
 # Give permissions to the i2c bus
 KERNEL=="i2c-[0-9]*", GROUP="i2c", MODE="0666"
@@ -167,6 +167,16 @@ SUBSYSTEM=="i2c-dev", DRIVER=="i801_smbus", GROUP="i2c", MODE="0666"
 
 # Generic I2C
 SUBSYSTEM=="i2c-dev", GROUP="i2c", MODE="0666"
+
+# AMD Wraith Prism (both USB and direct modes)
+SUBSYSTEMS=="usb", ATTR{idVendor}=="2516", ATTR{idProduct}=="0051", MODE="0666"
+SUBSYSTEMS=="usb", ATTR{idVendor}=="2516", ATTR{idProduct}=="0047", MODE="0666"
+# AMD Wraith Prism via motherboard USB header
+SUBSYSTEM=="usb", ATTRS{idVendor}=="2516", MODE="0666"
+KERNEL=="hidraw*", ATTRS{idVendor}=="2516", MODE="0666"
+
+# XPG/ADATA Products
+SUBSYSTEMS=="usb", ATTR{idVendor}=="125f", MODE="0666"
 EOF
 
 # Update udev rules
@@ -198,7 +208,141 @@ Type=Application
 Categories=Utility;
 EOF
 
-# Update systemd service with proper permissions
+# Try to set colors now
+log "Attempting to set colors..."
+echo "Setting all devices to color #${TARGET_COLOR}..."
+
+# Stop any existing OpenRGB processes
+killall openrgb 2>/dev/null || true
+sleep 2
+
+# Start fresh OpenRGB server with debug for USB detection
+openrgb --server --verbose 2>/tmp/openrgb.log &
+sleep 3
+
+# Set each device individually
+echo "Setting RAM modules..."
+openrgb --device 0 --mode direct --color ${TARGET_COLOR}
+openrgb --device 1 --mode direct --color ${TARGET_COLOR}
+sleep 1
+
+echo "Setting motherboard..."
+openrgb --device 2 --mode direct --color ${TARGET_COLOR}
+sleep 1
+
+# Try to detect and set AMD Wraith Prism with multiple attempts
+echo "Setting CPU Cooler..."
+for i in {3..6}; do
+    if openrgb --device $i 2>/dev/null | grep -qi "AMD\|Wraith\|CM"; then
+        echo "Found AMD Wraith Prism at device $i"
+        # Try different modes and zones
+        openrgb --device $i --zone 0 --mode direct --color ${TARGET_COLOR}
+        openrgb --device $i --zone 1 --mode direct --color ${TARGET_COLOR}
+        openrgb --device $i --zone 2 --mode direct --color ${TARGET_COLOR}
+        sleep 1
+        openrgb --device $i --mode static --color ${TARGET_COLOR}
+        break
+    fi
+done
+
+# Try to detect and set XPG SPECTRIX
+echo "Setting M.2 SSD..."
+for i in {3..6}; do
+    if openrgb --device $i 2>/dev/null | grep -q "XPG"; then
+        echo "Found XPG SPECTRIX at device $i"
+        openrgb --device $i --mode direct --color ${TARGET_COLOR}
+        openrgb --device $i --mode static --color ${TARGET_COLOR}
+        break
+    fi
+done
+
+# Set all devices together with different modes
+echo "Setting all devices together..."
+modes=("direct" "static")
+for mode in "${modes[@]}"; do
+    echo "Trying mode: $mode"
+    openrgb --mode $mode --color ${TARGET_COLOR}
+    sleep 1
+done
+
+# Show detected devices and their status
+echo "Currently detected devices:"
+openrgb --list-devices
+
+# Check if we found the CPU cooler
+if ! grep -qi "AMD\|Wraith\|CM" /tmp/openrgb.log; then
+    echo "Warning: AMD Wraith Prism not detected. Please check:"
+    echo "1. The USB header connection (currently on ADDR_LED3)"
+    echo "2. Try moving it to a different USB header"
+    echo "3. Make sure both USB and RGB cables are connected"
+fi
+
+# Create a profile for the current settings
+echo "Creating default color profile..."
+mkdir -p /root/.config/OpenRGB/
+cat > /root/.config/OpenRGB/default.orp << EOF
+{
+    "devices": [
+        {
+            "name": "ENE DRAM",
+            "type": "DRAM",
+            "description": "ENE SMBus Device",
+            "version": "AUDA0-E6K5-0101",
+            "serial": "",
+            "location": "I2C: /dev/i2c-2, address 0x71",
+            "mode": "Direct",
+            "colors": ["${TARGET_COLOR}", "${TARGET_COLOR}", "${TARGET_COLOR}", "${TARGET_COLOR}", "${TARGET_COLOR}", "${TARGET_COLOR}", "${TARGET_COLOR}", "${TARGET_COLOR}"]
+        },
+        {
+            "name": "ENE DRAM",
+            "type": "DRAM",
+            "description": "ENE SMBus Device",
+            "version": "AUDA0-E6K5-0101",
+            "serial": "",
+            "location": "I2C: /dev/i2c-2, address 0x73",
+            "mode": "Direct",
+            "colors": ["${TARGET_COLOR}", "${TARGET_COLOR}", "${TARGET_COLOR}", "${TARGET_COLOR}", "${TARGET_COLOR}", "${TARGET_COLOR}", "${TARGET_COLOR}", "${TARGET_COLOR}"]
+        },
+        {
+            "name": "ASRock B650M PG Lightning WiFi",
+            "type": "Motherboard",
+            "description": "ASRock Polychrome USB Device",
+            "version": "",
+            "serial": "",
+            "location": "HID: /dev/hidraw0",
+            "mode": "Direct",
+            "colors": ["${TARGET_COLOR}"]
+        },
+        {
+            "name": "AMD Wraith Prism",
+            "type": "Cooler",
+            "mode": "Direct",
+            "zones": [
+                {
+                    "name": "Fan",
+                    "color": "${TARGET_COLOR}"
+                },
+                {
+                    "name": "Ring",
+                    "color": "${TARGET_COLOR}"
+                },
+                {
+                    "name": "Logo",
+                    "color": "${TARGET_COLOR}"
+                }
+            ]
+        },
+        {
+            "name": "XPG SPECTRIX",
+            "type": "Storage",
+            "mode": "Direct",
+            "colors": ["${TARGET_COLOR}"]
+        }
+    ]
+}
+EOF
+
+# Update systemd service to load profile and ensure USB device access
 log "Updating systemd service..."
 cat > /etc/systemd/system/openrgb.service << EOF
 [Unit]
@@ -212,16 +356,17 @@ Type=simple
 ExecStartPre=/sbin/modprobe i2c_dev
 ExecStartPre=/sbin/modprobe i2c_piix4 force=1
 ExecStartPre=/sbin/modprobe i2c_i801 force_addr=1
-# Set permissions
+# Set permissions for all possible devices
 ExecStartPre=/bin/sh -c 'for i in \$(seq 0 9); do if [ -e "/dev/i2c-\$i" ]; then chmod 666 "/dev/i2c-\$i"; fi; done'
-# Start OpenRGB
-ExecStart=/usr/bin/openrgb --server --noautoconnect --brightness 100 --color ${TARGET_COLOR}
+ExecStartPre=/bin/sh -c 'for dev in /dev/hidraw*; do chmod 666 "\$dev"; done'
+# Start OpenRGB and load profile
+ExecStart=/usr/bin/openrgb --server --profile default
 Restart=on-failure
 RestartSec=3
 User=root
 Environment=DISPLAY=:0
 # Add proper device permissions
-SupplementaryGroups=i2c input video
+SupplementaryGroups=i2c input video plugdev
 # Add proper capabilities
 AmbientCapabilities=CAP_SYS_RAWIO CAP_SYS_ADMIN CAP_IPC_LOCK
 NoNewPrivileges=true
@@ -238,21 +383,6 @@ systemctl restart openrgb
 # Wait for service to initialize
 sleep 5
 
-# Try to set colors now
-log "Attempting to set colors..."
-echo "Setting all devices to red (#FF0000)..."
-
-# Try multiple times with different approaches
-for attempt in {1..3}; do
-    echo "Attempt $attempt to set colors..."
-    # Try direct mode first
-    openrgb --noautoconnect --mode direct --brightness 100 --color FF0000
-    sleep 1
-    # Then try static mode
-    openrgb --noautoconnect --mode static --brightness 100 --color FF0000
-    sleep 1
-done
-
 # Show current status
 echo
 echo "Current OpenRGB device status:"
@@ -266,7 +396,7 @@ echo "3. Apply all user and device permissions"
 echo "4. Initialize USB and PCI device detection"
 echo
 echo "After reboot:"
-echo "1. The systemd service will automatically set colors to #FF0000"
+echo "1. The systemd service will automatically set colors to #${TARGET_COLOR}"
 echo "2. You can verify by running: openrgb --list-devices"
 echo "3. To change colors manually: openrgb --color RRGGBB"
 echo "4. To use the GUI: just run 'openrgb'"
