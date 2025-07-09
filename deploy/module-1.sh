@@ -352,6 +352,9 @@ Port 22
 PermitRootLogin no
 PubkeyAuthentication yes
 PasswordAuthentication no
+ChallengeResponseAuthentication no
+KbdInteractiveAuthentication no
+UsePAM no
 MaxAuthTries 3
 ClientAliveInterval 60
 ClientAliveCountMax 10
@@ -370,6 +373,11 @@ UseDNS no
 MaxStartups 3:30:10
 AuthenticationMethods publickey
 EOF
+
+    # Ensure main sshd_config has strict settings
+    sudo sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+    sudo sed -i 's/^#*ChallengeResponseAuthentication.*/ChallengeResponseAuthentication no/' /etc/ssh/sshd_config
+    sudo sed -i 's/^#*UsePAM.*/UsePAM no/' /etc/ssh/sshd_config
 
     # Install and configure fail2ban for SSH protection
     info "Installing SSH brute-force protection..."
@@ -428,17 +436,8 @@ EOF
     info "===== SSH CONNECTION INFORMATION ====="
     info "IP Address: $ip_addr"
     info "Username: $SUDO_USER"
-    info "SSH Command: ssh $SUDO_USER@$ip_addr"
+    info "SSH Command: ssh -i ~/.ssh/id_rsa $SUDO_USER@$ip_addr"
     info "=================================="
-    
-    # Verify SSH connectivity
-    info "Testing SSH connectivity..."
-    if ! nc -zv -w5 "$ip_addr" 22 2>/dev/null; then
-        warning "SSH port test failed - this might be normal if firewall is not yet configured"
-        info "Continuing with installation..."
-    else
-        success "SSH port 22 is accessible"
-    fi
 }
 
 verify_ssh_config() {
@@ -1140,7 +1139,8 @@ configure_headless_boot() {
     fi
     
     # Add or update necessary GRUB parameters
-    local grub_cmdline="nomodeset video=efifb:off consoleblank=0 console=tty1 console=ttyS0,115200n8 ignore_loglevel"
+    # Using minimal parameters to maintain USB and system stability
+    local grub_cmdline="nomodeset console=tty1 consoleblank=0"
     
     info "Updating GRUB parameters..."
     
@@ -1154,22 +1154,8 @@ configure_headless_boot() {
     # Update GRUB configuration
     sudo sed -i.bak -E \
         -e 's|^GRUB_CMDLINE_LINUX_DEFAULT=.*|GRUB_CMDLINE_LINUX_DEFAULT="'"$final_cmdline"'"|' \
-        -e 's|^GRUB_CMDLINE_LINUX=.*|GRUB_CMDLINE_LINUX="'"$grub_cmdline"'"|' \
-        -e 's|^#?GRUB_TERMINAL=.*|GRUB_TERMINAL=console|' \
-        -e 's|^#?GRUB_TIMEOUT=.*|GRUB_TIMEOUT=1|' \
-        -e 's|^#?GRUB_RECORDFAIL_TIMEOUT=.*|GRUB_RECORDFAIL_TIMEOUT=1|' \
+        -e 's|^GRUB_TIMEOUT=.*|GRUB_TIMEOUT=5|' \
         /etc/default/grub
-    
-    # Add new parameters if they don't exist
-    if ! grep -q "^GRUB_TERMINAL=" /etc/default/grub; then
-        echo 'GRUB_TERMINAL=console' | sudo tee -a /etc/default/grub >/dev/null
-    fi
-    if ! grep -q "^GRUB_RECORDFAIL_TIMEOUT=" /etc/default/grub; then
-        echo 'GRUB_RECORDFAIL_TIMEOUT=1' | sudo tee -a /etc/default/grub >/dev/null
-    fi
-    
-    # Disable graphical terminal
-    sudo sed -i 's|^\s*if \[ "\$linux_gfx_mode" \]|if false \&\& [ "$linux_gfx_mode" ]|' /etc/grub.d/00_header
     
     # Update GRUB
     info "Applying GRUB configuration..."
@@ -1182,72 +1168,56 @@ configure_headless_boot() {
     # Configure systemd to not wait for a display manager
     info "Configuring systemd display settings..."
     
-    # Create systemd override directory
-    sudo mkdir -p /etc/systemd/system.conf.d/
-    
-    # Create custom systemd configuration
-    cat << 'EOF' | sudo tee /etc/systemd/system.conf.d/99-headless.conf > /dev/null
-[Manager]
-DefaultDependencies=no
-RequiresMountsFor=
-EOF
-    
-    # Disable plymouth (boot splash)
-    if dpkg -l | grep -q plymouth; then
-        info "Removing plymouth boot splash..."
-        sudo apt remove -y plymouth plymouth-theme-ubuntu-text
-    fi
-    
-    # Disable all display managers and GUI services
-    local gui_services=(
-        "gdm" "gdm3" "lightdm" "sddm"  # Display managers
-        "plymouth" "plymouth-quit" "plymouth-quit-wait" "plymouth-start"  # Plymouth services
-        "nvidia-persistenced"  # NVIDIA services
-        "graphical.target"  # Graphical target
-    )
-    
-    for service in "${gui_services[@]}"; do
-        if systemctl is-enabled --quiet "$service" 2>/dev/null; then
-            info "Disabling service: $service"
-            sudo systemctl disable "$service" 2>/dev/null || true
-            sudo systemctl mask "$service" 2>/dev/null || true
+    # Disable display manager if one exists
+    local display_managers=("gdm" "gdm3" "lightdm" "sddm")
+    for dm in "${display_managers[@]}"; do
+        if systemctl is-enabled --quiet "$dm" 2>/dev/null; then
+            info "Disabling display manager: $dm"
+            sudo systemctl disable "$dm"
         fi
     done
     
-    # Set multi-user.target as default
+    # Set multi-user.target as default (non-graphical)
     sudo systemctl set-default multi-user.target
     
-    # Create emergency fallback script
-    cat << 'EOF' | sudo tee /usr/local/bin/emergency-network > /dev/null
-#!/bin/bash
-# Emergency network configuration script
-ip link set dev enp6s0 up
-ip addr add 192.168.1.123/24 dev enp6s0
-ip route add default via 192.168.1.1
-EOF
-    
-    sudo chmod +x /usr/local/bin/emergency-network
-    
-    # Create systemd service for emergency network
-    cat << 'EOF' | sudo tee /etc/systemd/system/emergency-network.service > /dev/null
+    # Create network configuration check service
+    info "Creating network check service..."
+    cat << 'EOF' | sudo tee /etc/systemd/system/network-check.service > /dev/null
 [Unit]
-Description=Emergency Network Configuration
+Description=Network Configuration Check
 After=network.target
 Before=ssh.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/emergency-network
+ExecStart=/bin/sh -c 'ip link set dev $(ip route | grep default | awk "{print \$5}") up || true'
 RemainAfterExit=yes
 
 [Install]
 WantedBy=multi-user.target
 EOF
     
-    sudo systemctl enable emergency-network.service
+    sudo systemctl enable network-check.service
+    
+    # Remove any previous emergency network config
+    sudo rm -f /usr/local/bin/emergency-network
+    sudo rm -f /etc/systemd/system/emergency-network.service
     
     success "System configured for headless operation"
-    info "Added emergency network fallback configuration"
+    info "Network check service configured"
+    
+    # Restore any critical systemd services that might have been masked
+    info "Restoring critical system services..."
+    sudo systemctl unmask systemd-modules-load.service
+    sudo systemctl unmask systemd-remount-fs.service
+    sudo systemctl unmask systemd-udev-trigger.service
+    
+    # Ensure USB subsystem is not disabled
+    info "Ensuring USB subsystem is enabled..."
+    if grep -q "nousb" /etc/default/grub; then
+        sudo sed -i 's/nousb//' /etc/default/grub
+        sudo update-grub
+    fi
 }
 
 prepare_for_module2() {
@@ -1454,6 +1424,7 @@ main() {
     info "6. Then proceed with Module 2 installation"
     
     if confirm "Ready to halt system for video card removal?" "n"; then
+        local ip_addr=$(ip addr show "$PRIMARY_INTERFACE" | grep -oP 'inet \K[\d.]+')
         echo ""
         echo "!!! REMOVING VIDEO CARD PROCEDURE !!!"
         echo "1. Wait for system to completely shut down"
@@ -1462,7 +1433,7 @@ main() {
         echo "4. Reconnect power cable"
         echo "5. Power on system"
         echo "6. Wait 2-3 minutes"
-        echo "7. SSH from another machine: ssh $SUDO_USER@$ip_addr"
+        echo "7. SSH from another machine: ssh -i ~/.ssh/id_rsa $SUDO_USER@$ip_addr"
         echo ""
         warning "System halting in 10 seconds..."
         sleep 10
