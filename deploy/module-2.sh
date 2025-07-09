@@ -47,37 +47,75 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y \
     cmake \
     qttools5-dev-tools
 
-# Build and install OpenRGB from source
+# Build OpenRGB from source
 log "Building OpenRGB from source..."
 cd /tmp
 rm -rf OpenRGB || true
 git clone --depth 1 https://gitlab.com/CalcProgrammer1/OpenRGB
 cd OpenRGB
 
-# Build OpenRGB
+# Clean any previous builds
+make clean || true
+
+# Configure build
 if ! qmake OpenRGB.pro; then
     error "Failed to run qmake"
     exit 1
 fi
 
+# Build OpenRGB
 if ! make -j$(nproc); then
     error "Failed to build OpenRGB"
     exit 1
 fi
 
-if ! sudo make install; then
-    error "Failed to install OpenRGB"
+# Install the binary properly
+log "Installing OpenRGB binary..."
+if [ -f "openrgb" ]; then
+    # Install the binary directly instead of using make install
+    cp openrgb /usr/bin/openrgb
+    chmod 755 /usr/bin/openrgb
+    
+    # Verify the binary works
+    if ! /usr/bin/openrgb --version >/dev/null 2>&1; then
+        error "Failed to verify OpenRGB binary"
+        exit 1
+    fi
+else
+    error "OpenRGB binary not found after build"
     exit 1
 fi
+
+# Install other files
+make install INSTALL_ROOT=/usr || true
+
+# Update systemd service to use correct path
+log "Updating systemd service..."
+cat > /etc/systemd/system/openrgb.service << EOF
+[Unit]
+Description=OpenRGB LED Control
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/openrgb --server --noautoconnect --brightness 100 --color ${TARGET_COLOR}
+Restart=on-failure
+RestartSec=3
+User=root
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Clean up
+cd ..
+rm -rf OpenRGB
 
 # Verify installation
 if ! which openrgb >/dev/null 2>&1; then
     error "OpenRGB installation verification failed"
     exit 1
 fi
-
-cd ..
-rm -rf OpenRGB
 
 # Enable I2C/SMBus access
 log "Setting up I2C/SMBus access..."
@@ -155,23 +193,6 @@ Type=Application
 Categories=Utility;
 EOF
 
-# Create OpenRGB systemd service
-log "Creating OpenRGB service..."
-cat > /etc/systemd/system/openrgb.service << EOF
-[Unit]
-Description=OpenRGB LED Control
-After=multi-user.target
-
-[Service]
-Type=simple
-ExecStart=/usr/local/bin/openrgb --server --noautoconnect --brightness 100 --color ${TARGET_COLOR}
-Restart=on-failure
-RestartSec=3
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
 # Enable and start OpenRGB service
     systemctl daemon-reload
 systemctl enable openrgb
@@ -228,6 +249,69 @@ echo "1. Enable newly installed kernel modules"
 echo "2. Apply SMBus/I2C permissions"
 echo "3. Initialize hardware drivers"
 echo "4. Apply udev rules for USB device permissions"
+echo
+echo "Would you like to reboot now? [y/N] "
+read -r response
+if [[ "$response" =~ ^[Yy]$ ]]; then
+    reboot
+fi
+
+echo
+echo "If you choose not to reboot now, please reboot manually before using OpenRGB."
+echo "After reboot, RGB settings will be automatically applied via the systemd service."
+
+# After all installations and configurations are done
+log "Cleaning up and restarting services..."
+
+# Stop the service if running
+systemctl stop openrgb || true
+
+# Remove any old binaries
+rm -f /usr/local/bin/openrgb
+
+# Reload systemd
+systemctl daemon-reload
+
+# Start OpenRGB service
+systemctl enable openrgb
+systemctl start openrgb
+
+# Wait for service to start
+sleep 5
+
+# Check service status
+if ! systemctl is-active --quiet openrgb; then
+    error "OpenRGB service failed to start"
+    echo "Service status:"
+    systemctl status openrgb
+    journalctl -u openrgb -n 20
+    echo
+    echo "Would you like to reboot and try again? [y/N] "
+    read -r response
+    if [[ "$response" =~ ^[Yy]$ ]]; then
+        reboot
+    fi
+    exit 1
+fi
+
+log "OpenRGB service started successfully!"
+echo
+echo "Testing device detection..."
+if ! openrgb --list-devices 2>/dev/null | grep -q "Device:"; then
+    echo "No devices detected yet. This is normal after initial installation."
+    echo "A reboot is required to load all drivers and detect devices."
+else
+    echo "Devices detected! Setting colors..."
+    openrgb --noautoconnect --brightness 100 --color ${TARGET_COLOR}
+fi
+
+echo
+log "Installation complete!"
+echo "A reboot is REQUIRED for all changes to take effect properly:"
+echo "1. Load all kernel modules"
+echo "2. Initialize hardware drivers"
+echo "3. Apply all permissions"
+echo "4. Start OpenRGB with proper device detection"
 echo
 echo "Would you like to reboot now? [y/N] "
 read -r response
