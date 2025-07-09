@@ -1150,18 +1150,7 @@ setup_log_rotation() {
     sudo tee /etc/logrotate.d/mining-logs > /dev/null << 'EOF'
 # Mining logs rotation configuration
 
-/var/log/thermal-monitor.log {
-    daily
-    rotate 30
-    compress
-    delaycompress
-    missingok
-    notifempty
-    create 644 root root
-    postrotate
-        systemctl reload thermal-monitor 2>/dev/null || true
-    endscript
-}
+# Thermal monitoring removed - runs at 100% performance regardless of temperature
 
 /var/log/mining-performance.log {
     daily
@@ -2635,7 +2624,7 @@ get_xmrig_optimization_summary() {
     log "  Memory Latency: Tested and optimized prefetch settings"
     log "  CPU Performance: Tested and configured accordingly"
     log "  System Services: Unnecessary services disabled"
-    log "  Thermal Protection: Advanced monitoring with hashrate tracking"
+    log "  Performance Monitoring: Optimized for maximum hashrate (no thermal throttling)"
     
     log "  Applied Optimizations: MSR tuning, IRQ isolation, memory optimization, CPU tuning"
 }
@@ -2664,12 +2653,12 @@ log "  Check P2Pool status: sudo systemctl status p2pool"
 log "  Verify payment address: grep 'wallet' <(ps aux | grep p2pool)"
 log ""
 log "Hardware Monitoring Commands:"
-log "  CPU temperatures: sensors"
+log "  CPU monitoring: Performance optimized (no thermal throttling)"
 log "  CPU frequencies: cpufreq-info"
 log "  Memory info: cat /proc/meminfo | grep -E 'HugePages|MemAvailable'"
 log "  Huge pages status: cat /sys/kernel/mm/hugepages/hugepages-*/nr_hugepages"
 log "  Mining optimization status: sudo systemctl status mining-optimization"
-log "  Thermal monitor logs: sudo journalctl -u thermal-monitor -f"
+log "  Performance logs: tail -f /var/log/mining-performance.log"
 log "  Performance tracking: tail -f /var/log/mining-performance.log"
 log "  MSR access verification: ls -la /dev/cpu/*/msr"
 log "  IRQ affinity status: cat /proc/interrupts"

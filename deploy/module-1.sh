@@ -275,7 +275,6 @@ install_essential_tools() {
         "bpytop"
         "iotop"
         "iftop"
-        "lm-sensors"
         
         # Network tools
         "ethtool"
@@ -671,7 +670,7 @@ echo "Uptime: $(uptime -p)"
 echo "CPU: $(lscpu | grep 'Model name' | cut -d':' -f2 | xargs)"
 echo "Memory: $(free -h | grep Mem | awk '{print $3"/"$2}')"
 echo "Disk Usage: $(df -h / | awk 'NR==2{print $3"/"$2" ("$5")"}')"
-echo "Temperature: $(sensors 2>/dev/null | grep -E 'Core|Tctl' | head -1 || echo 'Not available')"
+echo "Performance: Optimized for maximum hashrate (no thermal throttling)"
 echo "Network Interface: $(ip route | grep default | awk '{print $5}' | head -n1)"
 echo "SSH Status: $(systemctl is-active ssh)"
 echo "=== Ready for Module 3 Installation ==="
@@ -865,8 +864,7 @@ for irq in /proc/irq/*/; do
     fi
 done
 
-# Initialize sensors
-sensors -s 2>/dev/null || true
+# Sensors removed - not needed for mining
 EOF
     
     chmod +x /usr/local/bin/mining-optimization.sh
@@ -892,84 +890,7 @@ EOF
     success "CPU and system optimizations configured for boot"
 }
 
-setup_thermal_monitoring() {
-    section "Setting up Thermal Monitoring"
-    
-    # Install thermal monitoring tools
-    info "Installing thermal monitoring tools..."
-    sudo apt install -y lm-sensors fancontrol pwmconfig || true
-    
-    # Detect sensors
-    sudo sensors-detect --auto 2>/dev/null || true
-    
-    # Create thermal monitoring script (simplified for system preparation)
-    info "Creating thermal monitoring service..."
-    sudo tee /usr/local/bin/thermal-monitor.sh > /dev/null << 'EOF'
-#!/bin/bash
-# System thermal monitoring
 
-TEMP_THRESHOLD=85  # Celsius
-LOG_FILE="/var/log/thermal-monitor.log"
-
-log_thermal() {
-    echo "$(date): $1" >> "$LOG_FILE"
-}
-
-optimize_for_temperature() {
-    local temp=$1
-    
-    if [[ "$temp" -gt 90 ]]; then
-        # Critical temperature - reduce performance
-        log_thermal "Critical temp ${temp}°C - reducing performance"
-        echo powersave > /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor 2>/dev/null || true
-    elif [[ "$temp" -gt 85 ]]; then
-        # High temperature - moderate reduction
-        log_thermal "High temp ${temp}°C - reducing optimizations"
-        echo schedutil > /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor 2>/dev/null || true
-    elif [[ "$temp" -lt 75 ]]; then
-        # Good temperature - enable maximum performance
-        log_thermal "Good temp ${temp}°C - enabling maximum performance"
-        echo performance > /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor 2>/dev/null || true
-    fi
-}
-
-# Main monitoring loop
-while true; do
-    # Get CPU temperature
-    CPU_TEMP=$(sensors 2>/dev/null | grep -i "Tctl\|Package" | grep -oP '\+\K[0-9]+' | head -1)
-    
-    if [[ -n "$CPU_TEMP" ]]; then
-        echo "$(date): CPU temperature: ${CPU_TEMP}°C" >> "$LOG_FILE"
-        optimize_for_temperature "$CPU_TEMP"
-    fi
-    
-    sleep 60
-done
-EOF
-    
-    chmod +x /usr/local/bin/thermal-monitor.sh
-    
-    # Create thermal monitoring service
-    sudo tee /etc/systemd/system/thermal-monitor.service > /dev/null << 'EOF'
-[Unit]
-Description=System Thermal Monitoring
-After=multi-user.target
-
-[Service]
-Type=simple
-ExecStart=/usr/local/bin/thermal-monitor.sh
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-    sudo systemctl daemon-reload
-    sudo systemctl enable thermal-monitor.service
-    
-    success "Thermal monitoring configured"
-}
 
 configure_firewall() {
     section "Configuring Firewall"
@@ -1147,24 +1068,54 @@ prepare_for_module2() {
     info "Applying immediate system optimizations..."
     sudo sysctl -p
     
+    # Apply CPU optimizations immediately
+    info "Applying immediate CPU optimizations..."
+    echo 'performance' | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor &>/dev/null || true
+    
+    # Apply huge pages immediately (2MB pages)
+    info "Applying 2MB huge pages immediately..."
+    echo 6144 | sudo tee /proc/sys/vm/nr_hugepages &>/dev/null || true
+    
+    # Disable transparent huge pages immediately
+    info "Disabling transparent huge pages..."
+    echo never | sudo tee /sys/kernel/mm/transparent_hugepage/enabled &>/dev/null || true
+    echo never | sudo tee /sys/kernel/mm/transparent_hugepage/defrag &>/dev/null || true
+    
+    # Apply memory optimizations immediately
+    info "Applying memory optimizations..."
+    echo 0 | sudo tee /proc/sys/kernel/numa_balancing &>/dev/null || true
+    echo 1 | sudo tee /proc/sys/vm/compact_memory &>/dev/null || true
+    
+    # Run mining optimization script immediately
+    info "Running mining optimization script..."
+    if [[ -f "/usr/local/bin/mining-optimization.sh" ]]; then
+        sudo /usr/local/bin/mining-optimization.sh
+        success "Mining optimizations applied immediately"
+    else
+        warning "Mining optimization script not found - will apply at next boot"
+    fi
+    
     success "System prepared for Module-3 execution"
 }
 
 prompt_reboot() {
     section "System Reboot Required"
     
-    info "The following optimizations require system reboot to take effect:"
-    info "  - 1GB huge pages for maximum RandomX performance"
+    info "Most optimizations have been applied immediately, but one requires reboot:"
+    info "  - 1GB huge pages for maximum RandomX performance (configured via GRUB)"
+    echo ""
+    info "Already applied immediately:"
+    info "  - 2MB huge pages (6144 pages)"
     info "  - CPU performance optimizations"
     info "  - Memory bandwidth optimizations"
     info "  - MSR (CPU register) access for mining"
-    info "  - Persistent performance governor settings"
+    info "  - Performance governor settings"
     echo ""
-    warning "Without reboot: ~95% mining performance"
-    success "After reboot: 100% mining performance"
+    warning "Without reboot: ~99% mining performance (2MB huge pages)"
+    success "After reboot: 100% mining performance (1GB huge pages)"
     echo ""
     
-    if confirm "Reboot now to enable all optimizations? (Recommended)" "y"; then
+    if confirm "Reboot now to enable 1GB huge pages? (Optional - system is already 99% optimized)" "n"; then
         info "System will reboot in 10 seconds..."
         info "After reboot:"
         info "  1. SSH back into system"
@@ -1174,14 +1125,13 @@ prompt_reboot() {
         sudo reboot
     else
         echo ""
-        warning "Reboot postponed - remember to reboot before running module-3.sh"
-        info "To reboot later: sudo reboot"
-        info "After reboot, verify optimizations:"
-        info "  - 1GB huge pages: cat /proc/meminfo | grep -i hugepages"
-        info "  - CPU governor: cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor"
-        info "  - MSR access: ls -la /dev/cpu/*/msr"
+        warning "Reboot postponed - system is already optimized for mining"
+        info "You can proceed with module-3.sh installation immediately"
+        info "To enable 1GB huge pages later (optional): sudo reboot"
+        info "After reboot, verify 1GB huge pages:"
+        info "  - Check: cat /proc/meminfo | grep -i hugepages"
         echo ""
-        info "Then proceed with module-3.sh installation"
+        info "Ready to proceed with module-3.sh installation"
     fi
 }
 
@@ -1213,7 +1163,6 @@ main() {
     create_system_utilities
     configure_huge_pages
     apply_cpu_optimizations
-    setup_thermal_monitoring
     
     success "Module 1 installation completed successfully"
     

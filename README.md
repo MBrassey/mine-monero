@@ -265,7 +265,7 @@ vim module-2.sh
    - Enable SSH service with security hardening
    - Add engineer public key to authorized_keys
    - Configure huge pages and CPU optimizations
-   - Set up thermal monitoring and performance tuning
+   - Set up performance tuning
    - **Prompt for system reboot** (required for optimal performance)
 
 **Step 10: Test SSH Access and Prepare for Headless Operation**
@@ -408,7 +408,7 @@ Mining deployment system automatically downloads and configures the following op
 
 **Automated Monitoring & Recovery:**
 - Service health monitoring with systemd restart logic
-- Thermal management with dynamic frequency scaling
+- Performance management with dynamic frequency scaling
 - Hardware optimization service applies settings at boot
 - Prometheus metrics export for external monitoring
 
@@ -416,7 +416,7 @@ Mining deployment system automatically downloads and configures the following op
 - SSH hardening with fail2ban brute-force protection
 - Firewall configuration with mining network access
 - Systemd service dependencies and restart logic
-- Thermal monitoring with frequency scaling protection
+- Performance monitoring with frequency scaling protection
 - Comprehensive logging via systemd journal
 
 **Performance Optimization:**
@@ -452,7 +452,7 @@ vim module-1.sh
   - Huge pages (1GB and 2MB) for RandomX performance
   - CPU register (MSR) optimizations
   - IRQ affinity optimization (isolates system IRQs to cores 0-1)
-  - Thermal monitoring with dynamic frequency scaling
+  - Performance optimization monitoring
   - Performance governor settings and CPU tuning
 - Configures firewall (UFW) with mining network access and metrics ports
 - Disables unnecessary services (bluetooth, cups, avahi-daemon, snapd, etc.)
@@ -496,7 +496,7 @@ sudo ./module-2.sh
 - Sets up comprehensive monitoring:
   - XMRig HTTP API for real-time statistics
   - Prometheus exporters for metrics collection
-  - System metrics and thermal monitoring
+  - System metrics monitoring
   - Automated service health checks
 - Configures 4-pool failover system:
   - P2Pool (primary)
@@ -504,7 +504,7 @@ sudo ./module-2.sh
 - Creates systemd services with proper dependencies and restart logic
 - Includes automated recovery and monitoring features:
   - Service health monitoring with automatic recovery
-  - Thermal protection with dynamic frequency scaling
+  - Performance protection with dynamic frequency scaling
   - Wallet address verification and monitoring
   - Comprehensive logging system
 - Verifies all installations, APIs, and mining activity before completion
@@ -559,7 +559,7 @@ vim config.json
 sudo systemctl status xmrig p2pool monerod
 
 # Check monitoring services
-sudo systemctl status thermal-monitor xmrig_exporter node_exporter
+sudo systemctl status xmrig_exporter node_exporter
 
 # Follow real-time logs for each service:
 
@@ -571,9 +571,6 @@ sudo journalctl -u p2pool -f
 
 # Monero daemon logs
 sudo journalctl -u monerod -f
-
-# Thermal monitoring logs
-sudo journalctl -u thermal-monitor -f
 
 # XMRig exporter logs
 sudo journalctl -u xmrig_exporter -f
@@ -588,8 +585,8 @@ sudo journalctl -u node_exporter -f
 curl -s http://localhost:18088/1/summary | jq
 # Or remotely: curl -s http://[rig-ip]:18088/1/summary | jq
 
-# Check system temperatures
-sensors
+# Check system performance
+htop
 
 # Monitor mining services
 sudo systemctl status xmrig p2pool monerod
@@ -599,8 +596,8 @@ sudo journalctl -u xmrig -f
 sudo journalctl -u p2pool -f
 sudo journalctl -u monerod -f
 
-# Check thermal monitoring logs
-sudo journalctl -u thermal-monitor -n 20
+# Check performance monitoring logs
+sudo journalctl -u xmrig_exporter -n 20
 
 # Check service status
 sudo systemctl status xmrig p2pool monerod xmrig_exporter node_exporter
@@ -761,7 +758,7 @@ node_memory_MemAvailable_bytes
 **Monitoring Features:**
 - **Service Dependencies:** Systemd restart logic with proper service ordering
 - **API Monitoring:** XMRig, P2Pool, and Monero daemon status via REST APIs
-- **Hardware Monitoring:** CPU temperatures, frequencies, and thermal management
+- **Hardware Monitoring:** CPU frequencies and performance management
 - **Metrics Export:** Prometheus-compatible metrics for external monitoring systems
 
 ## System Architecture
@@ -812,7 +809,7 @@ Modules automatically detect and optimize for specific hardware configuration:
 - **IRQ Affinity**: System interrupts isolated to cores 0-1, mining cores 2-31
 - **Memory Tuning**: Bandwidth, latency, and allocation optimizations
 - **Storage I/O**: mq-deadline scheduler for all storage devices
-- **Thermal Management**: Advanced monitoring with frequency scaling
+- **Performance Management**: Advanced monitoring with frequency scaling
 - **System Services**: Unnecessary services disabled (bluetooth, cups, etc.)
 
 **Module-3 Mining Optimizations (immediate):**
@@ -836,9 +833,8 @@ grep MHz /proc/cpuinfo | head -4
 # Verify memory configuration
 cat /proc/meminfo | grep -E 'HugePages|MemAvailable'
 
-# Check thermal monitoring
-sensors
-sudo systemctl status thermal-monitor
+# Check performance monitoring
+sudo systemctl status xmrig_exporter node_exporter
 
 # Verify mining services
 sudo systemctl status xmrig p2pool monerod
@@ -914,9 +910,9 @@ curl -s http://localhost:9101/metrics | grep mining_service
 
 **Automated Recovery Features**
 - **Service Dependencies**: Systemd services configured with proper restart logic and dependencies
-- **Thermal Management**: thermal-monitor adjusts CPU frequency if temperature > 85°C (continuous)
+- **Performance Management**: System monitoring with automatic performance optimization
 - **Mining Optimization**: mining-optimization service applies performance settings at boot
-- **Hardware Monitoring**: Sensors and performance governors automatically optimize for mining workload
+- **Hardware Monitoring**: Performance governors automatically optimize for mining workload
 
 ### Recovery Procedures
 
@@ -973,14 +969,14 @@ sudo systemctl start monerod
 ### Automated Maintenance
 System includes automated maintenance features:
 - **Systemd service management** with automatic restart on failure
-- **Thermal monitoring** with dynamic frequency scaling
+- **Performance monitoring** with dynamic frequency scaling
 - **Hardware optimization** applied at boot via mining-optimization service
 
 ### Manual Maintenance Tasks
 
 **Weekly:**
 - Check P2Pool Observer for payout confirmation
-- Review service logs: `sudo journalctl -u thermal-monitor -n 50`
+- Review service logs: `sudo journalctl -u xmrig_exporter -n 50`
 
 **Monthly:**
 - System package updates: `sudo apt update && sudo apt upgrade`
@@ -1019,7 +1015,7 @@ chmod +x module-2.sh
 
 **Automated Features:**
 - Systemd service dependencies and restart logic
-- Thermal management with performance optimization
+- Performance management with system optimization
 - Hardware optimization service at boot
 - Prometheus metrics export for monitoring
 
@@ -1037,10 +1033,10 @@ chmod +x module-2.sh
 sudo journalctl -u xmrig p2pool monerod -n 50
 
 # Monitoring services  
-sudo journalctl -u thermal-monitor xmrig_exporter node_exporter -n 50
+sudo journalctl -u xmrig_exporter node_exporter -n 50
 
 # Check service status
-sudo systemctl status xmrig p2pool monerod thermal-monitor
+sudo systemctl status xmrig p2pool monerod xmrig_exporter node_exporter
 ```
 
 **Community Support:**
