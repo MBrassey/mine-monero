@@ -128,56 +128,52 @@ if [ -n "$SUDO_USER" ]; then
     done
 fi
 
-# Create config directories with proper permissions
-for dir in "/root/.config/OpenRGB" "/home/$SUDO_USER/.config/OpenRGB"; do
-    mkdir -p "$dir"
-    if [[ "$dir" == /home/* ]]; then
-        chown -R "$SUDO_USER:$SUDO_USER" "$dir"
-    fi
-done
-
-# Update systemd service to handle server properly
+# Update systemd service with fixed command handling
 cat > /etc/systemd/system/openrgb.service << EOF
 [Unit]
 Description=OpenRGB LED Control
 After=multi-user.target systemd-modules-load.service
 Wants=modprobe@i2c_dev.service modprobe@i2c_piix4.service modprobe@i2c_i801.service
-StartLimitIntervalSec=0
 
 [Service]
 Type=simple
-# Wait for USB and I2C devices to settle
+# Wait for devices
 ExecStartPre=/bin/sleep 5
-ExecStartPre=/usr/bin/killall openrgb || true
 
-# Load required modules with options
+# Kill any existing instances
+ExecStartPre=-/usr/bin/killall openrgb
+
+# Load modules
 ExecStartPre=/sbin/modprobe i2c_dev
 ExecStartPre=/sbin/modprobe i2c_piix4 force=1
 ExecStartPre=/sbin/modprobe i2c_i801 force_addr=1
 
-# Set permissions for devices
-ExecStartPre=/bin/sh -c 'for i in \$(seq 0 9); do if [ -e "/dev/i2c-\$i" ]; then chmod 666 "/dev/i2c-\$i"; fi; done'
-ExecStartPre=/bin/sh -c 'for dev in /dev/hidraw*; do chmod 666 "\$dev"; done'
+# Set device permissions
+ExecStartPre=/bin/chmod 666 /dev/i2c-*
+ExecStartPre=/bin/chmod 666 /dev/hidraw*
 
-# Start OpenRGB with retries
-ExecStart=/bin/bash -c 'for i in {1..5}; do /usr/bin/openrgb --server --nodetect --profile default && break || sleep 2; done'
+# Start OpenRGB
+ExecStart=/usr/bin/openrgb --server --nodetect --profile default
 
-# Restart settings
 Restart=on-failure
 RestartSec=3
-StartLimitBurst=10
-
 User=root
 Environment=DISPLAY=:0
 SupplementaryGroups=i2c input video plugdev
-AmbientCapabilities=CAP_SYS_RAWIO CAP_SYS_ADMIN CAP_IPC_LOCK
-NoNewPrivileges=true
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-# Create a valid profile with proper header and all devices
+# Stop any existing service
+systemctl stop openrgb || true
+sleep 2
+
+# Create OpenRGB config directories
+mkdir -p /root/.config/OpenRGB
+mkdir -p /home/$SUDO_USER/.config/OpenRGB
+
+# Create a minimal working profile
 cat > /root/.config/OpenRGB/default.orp << EOF
 {
     "header": {
@@ -189,63 +185,8 @@ cat > /root/.config/OpenRGB/default.orp << EOF
         {
             "name": "ASRock B650M PG Lightning WiFi",
             "type": "Motherboard",
-            "description": "ASRock Polychrome USB Device",
             "vendor": "ASRock",
             "active_mode": "Static",
-            "modes": [
-                {
-                    "name": "Static",
-                    "value": 1,
-                    "flags": 0,
-                    "colors": ["${TARGET_COLOR}"]
-                }
-            ],
-            "colors": ["${TARGET_COLOR}"],
-            "zones": [
-                {
-                    "name": "RGB LED 1 Header",
-                    "colors": ["${TARGET_COLOR}"]
-                },
-                {
-                    "name": "Addressable Header 1",
-                    "colors": ["${TARGET_COLOR}"]
-                },
-                {
-                    "name": "Addressable Header 2",
-                    "colors": ["${TARGET_COLOR}"]
-                },
-                {
-                    "name": "PCB",
-                    "colors": ["${TARGET_COLOR}"]
-                },
-                {
-                    "name": "Addressable Header 3/Audio",
-                    "colors": ["${TARGET_COLOR}"]
-                }
-            ]
-        },
-        {
-            "name": "AMD Wraith Prism",
-            "type": "Cooler",
-            "active_mode": "Static",
-            "modes": [
-                {
-                    "name": "Static",
-                    "colors": ["${TARGET_COLOR}"]
-                }
-            ],
-            "colors": ["${TARGET_COLOR}"]
-        },
-        {
-            "name": "XPG SPECTRIX",
-            "type": "Storage",
-            "active_mode": "Static",
-            "modes": [
-                {
-                    "name": "Static",
-                    "colors": ["${TARGET_COLOR}"]
-                }
-            ],
             "colors": ["${TARGET_COLOR}"]
         }
     ]
@@ -256,7 +197,16 @@ EOF
 cp -f /root/.config/OpenRGB/default.orp "/home/$SUDO_USER/.config/OpenRGB/"
 chown -R "$SUDO_USER:$SUDO_USER" "/home/$SUDO_USER/.config/OpenRGB"
 
-# Reload systemd and restart service
+# Test OpenRGB directly first
+echo "Testing OpenRGB directly..."
+openrgb --server --nodetect &
+sleep 3
+openrgb --nodetect --device 0 --mode static --color ${TARGET_COLOR}
+sleep 1
+killall openrgb
+
+# Reload and restart service
+echo "Starting OpenRGB service..."
 systemctl daemon-reload
 systemctl enable openrgb
 systemctl restart openrgb
@@ -264,7 +214,11 @@ systemctl restart openrgb
 # Wait for service to initialize
 sleep 5
 
-# Verify current status
+# Check service status
+echo
+echo "OpenRGB Service Status:"
+systemctl status openrgb --no-pager
+
 echo
 echo "Current OpenRGB device status:"
 openrgb --nodetect --list-devices
