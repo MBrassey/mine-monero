@@ -96,13 +96,20 @@ This mining setup is optimized for the following hardware configuration:
 **Step 5: Ubuntu 24.04 Installation**
 1. Connect video card to mining rig
 2. Insert Ubuntu 24.04 installation USB
-3. Boot from USB and perform **complete Ubuntu installation**
-4. Configure initial user account during installation
-5. Configure network settings during installation
+3. Boot from USB and select **Minimal installation** option
+4. Create user account with username "ubuntu" during installation
+5. Configure network settings during installation:
+   - Set static internal IP address manually within 192.168.1.0/24 subnet
+   - Example: IP: 192.168.1.xxx, Netmask: 255.255.255.0, Gateway: 192.168.1.1
+   - Record the IP for SSH access configuration
 6. Ensure network connectivity is established
+7. After installation completes, run system update:
+   ```bash
+   sudo apt update && sudo apt upgrade -y
+   ```
 
 **Step 6: Initial System Setup**
-1. Log into freshly installed Ubuntu system
+1. Log into freshly installed Ubuntu system as user "ubuntu"
 2. Update package repository and install essential tools:
    ```bash
    sudo apt update
@@ -118,7 +125,58 @@ This mining setup is optimized for the following hardware configuration:
 
 ### Phase 3: Configuration Setup
 
-**Step 8: Update Configuration Files**
+**Step 8: Network and Firewall Configuration**
+
+The mining setup uses the following network configuration:
+- Subnet: 192.168.1.0/24
+- Required open ports:
+  ```
+  Mining Ports:
+  • P2Pool Stratum: 3333/tcp
+  • P2Pool P2P: 37889/tcp
+  • P2Pool Mini P2P: 37888/tcp
+  • Monero P2P: 18080/tcp
+  • Monero RPC: 18081/tcp
+  • XMRig API: 18088/tcp
+  
+  Monitoring Ports:
+  • XMRig Exporter: 9100/tcp
+  • Node Exporter: 9101/tcp
+  
+  Access Ports:
+  • SSH: 22/tcp
+  ```
+
+**Customizing Network Configuration:**
+1. If using a different subnet, edit module-1.sh:
+   ```bash
+   vim module-1.sh
+   ```
+   Find the line:
+   ```bash
+   sudo ufw allow from 192.168.1.0/24 comment 'Mining Network'
+   ```
+   Replace 192.168.1.0/24 with your subnet.
+
+2. Verify your network configuration:
+   ```bash
+   ip addr show
+   ```
+   Ensure your IP is within the configured subnet.
+
+3. The firewall configuration will:
+   - Allow all outbound traffic
+   - Allow inbound traffic only on specified ports
+   - Allow all traffic from mining network (192.168.1.0/24)
+   - Block all other inbound traffic
+
+4. After module-1.sh completes, verify firewall status:
+   ```bash
+   sudo ufw status numbered
+   ```
+   This will show all active firewall rules.
+
+**Step 9: Update Configuration Files**
 
 Before running the modules, update the following configuration files in the `deploy` directory:
 

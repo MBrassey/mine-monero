@@ -142,6 +142,59 @@ version_greater_equal() {
 verify_dependencies() {
     log "==> Verifying build dependencies..."
     
+    # Install missing packages if needed
+    local required_packages=(
+        # Build tools
+        "build-essential"
+        "cmake"
+        "git"
+        "make"
+        "gcc"
+        "g++"
+        
+        # Libraries
+        "libssl-dev"
+        "libhwloc-dev"
+        "libuv1-dev"
+        
+        # Utilities
+        "curl"
+        "wget"
+        "jq"
+        "tar"
+    )
+    
+    info "Checking and installing required packages..."
+    
+    # Update package lists first
+    if ! sudo apt update; then
+        error "Failed to update package lists"
+        exit 1
+    fi
+    
+    # Install packages in groups
+    local current_group=()
+    local group_size=4
+    local i=0
+    
+    for package in "${required_packages[@]}"; do
+        if ! dpkg -l | grep -q "^ii.*$package"; then
+            current_group+=("$package")
+        fi
+        ((i++))
+        
+        if [[ ${#current_group[@]} -eq $group_size ]] || [[ $i -eq ${#required_packages[@]} ]]; then
+            if [[ ${#current_group[@]} -gt 0 ]]; then
+                info "Installing package group: ${current_group[*]}"
+                if ! sudo apt install -y "${current_group[@]}"; then
+                    error "Failed to install packages: ${current_group[*]}"
+                    exit 1
+                fi
+            fi
+            current_group=()
+        fi
+    done
+    
     # Check GCC version
     if ! command -v gcc &>/dev/null; then
         error "GCC not found. Please install build-essential"
@@ -172,13 +225,21 @@ verify_dependencies() {
     fi
     log "OpenSSL version $OPENSSL_VERSION - OK"
     
-    # Check other essential tools
-    local tools=("git" "curl" "wget" "jq" "tar" "make")
-    for tool in "${tools[@]}"; do
+    # Verify all critical tools are available
+    local critical_tools=("git" "curl" "wget" "jq" "tar" "make" "gcc" "g++")
+    local missing_tools=()
+    
+    for tool in "${critical_tools[@]}"; do
         if ! command -v "$tool" &>/dev/null; then
-            error "$tool not found. Please install $tool"
+            missing_tools+=("$tool")
         fi
     done
+    
+    if [[ ${#missing_tools[@]} -gt 0 ]]; then
+        error "Critical tools still missing after installation: ${missing_tools[*]}"
+        exit 1
+    fi
+    
     log "All required tools available"
 }
 
@@ -223,6 +284,12 @@ verify_system_state() {
     # Check sudo access
     if ! sudo -n true 2>/dev/null; then
         error "Sudo access required but not available"
+    fi
+    
+    # Verify correct username
+    if [[ "$USER" != "ubuntu" ]]; then
+        error "Script must be run as user 'ubuntu'. Current user: $USER"
+        exit 1
     fi
     
     log "System state verification completed"

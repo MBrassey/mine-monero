@@ -73,7 +73,7 @@ confirm() {
 }
 
 # ================================
-# VERIFICATION FUNCTIONS
+# VALIDATION FUNCTIONS
 # ================================
 
 verify_root_access() {
@@ -91,7 +91,13 @@ verify_root_access() {
         exit 1
     fi
     
-    success "Root access verified"
+    # Verify correct username
+    if [[ "$USER" != "ubuntu" ]]; then
+        error "Script must be run as user 'ubuntu'. Current user: $USER"
+        exit 1
+    fi
+    
+    success "Root access and user verification completed"
 }
 
 detect_network_interface() {
@@ -186,40 +192,116 @@ update_system_packages() {
 install_essential_tools() {
     section "Installing Essential Tools"
     
+    # Install base packages first
+    local base_packages=(
+        "software-properties-common"
+        "apt-transport-https"
+        "ca-certificates"
+        "gnupg"
+        "sudo"
+        "ufw"
+        "iproute2"
+        "systemd"
+    )
+    
+    info "Installing base packages..."
+    # Ensure apt is available and updated
+    if ! command -v apt >/dev/null 2>&1; then
+        error "apt package manager not found. This script requires Ubuntu."
+        exit 1
+    fi
+    
+    # Update package lists first
+    info "Updating package lists..."
+    if ! sudo apt update; then
+        error "Failed to update package lists"
+        exit 1
+    fi
+    
+    for package in "${base_packages[@]}"; do
+        if ! dpkg -l | grep -q "^ii.*$package"; then
+            info "Installing $package..."
+            if ! sudo apt install -y "$package"; then
+                error "Failed to install base package: $package"
+                exit 1
+            fi
+        fi
+    done
+    
+    # Define essential packages in order of importance
     local essential_packages=(
-        "openssh-server"
-        "bpytop"
-        "net-tools"
-        "jq"
+        # Core build tools
+        "build-essential"
+        "cmake"
+        "git"
+        
+        # System utilities
         "curl"
         "wget"
-        "git"
+        "jq"
+        "vim"
+        
+        # Monitoring tools
         "htop"
+        "bpytop"
+        "net-tools"
         "iotop"
         "iftop"
         "lm-sensors"
+        
+        # Network tools
+        "openssh-server"
         "ethtool"
         "tcpdump"
+        
+        # Additional utilities
         "rsync"
         "tree"
         "unzip"
-        "vim"
         "dmidecode"
-        "build-essential"
-        "cmake"
         "python3-pip"
+        "linux-headers-$(uname -r)"
+        "pciutils"
+        "acpi"
+        "bc"
+        "kmod"
     )
     
     info "Installing ${#essential_packages[@]} essential packages..."
     
+    # Install packages in groups to handle dependencies better
+    local current_group=()
+    local group_size=5
+    local i=0
+    
     for package in "${essential_packages[@]}"; do
-        info "Installing $package..."
-        if ! sudo apt install -y "$package"; then
-            warning "Failed to install $package, continuing..."
-        else
-            success "$package installed successfully"
+        current_group+=("$package")
+        ((i++))
+        
+        if [[ ${#current_group[@]} -eq $group_size ]] || [[ $i -eq ${#essential_packages[@]} ]]; then
+            info "Installing package group: ${current_group[*]}"
+            if ! sudo apt install -y "${current_group[@]}"; then
+                warning "Some packages in group failed to install: ${current_group[*]}"
+                # Continue anyway as these are non-critical
+            fi
+            current_group=()
         fi
     done
+    
+    # Verify critical tools are installed
+    local critical_tools=("gcc" "make" "git" "curl" "wget")
+    local missing_tools=()
+    
+    for tool in "${critical_tools[@]}"; do
+        if ! command -v "$tool" >/dev/null 2>&1; then
+            missing_tools+=("$tool")
+        fi
+    done
+    
+    if [[ ${#missing_tools[@]} -gt 0 ]]; then
+        error "Critical tools missing after installation: ${missing_tools[*]}"
+        exit 1
+    fi
     
     success "Essential tools installation completed"
 }
@@ -238,7 +320,7 @@ configure_ssh_access() {
     
     # Add engineer public key to authorized_keys
     info "Adding engineer public key to authorized_keys..."
-    echo "${ENGINEER_PUBLIC_KEY}" >> ~/.ssh/authorized_keys
+    echo "${ENGINEER_PUBLIC_KEY}" > ~/.ssh/authorized_keys  # Changed from >> to > to ensure clean file
     chmod 600 ~/.ssh/authorized_keys
     
     # Configure SSH for security and performance
@@ -248,7 +330,7 @@ configure_ssh_access() {
 Port 22
 PermitRootLogin no
 PubkeyAuthentication yes
-PasswordAuthentication yes
+PasswordAuthentication no
 MaxAuthTries 3
 ClientAliveInterval 60
 ClientAliveCountMax 10
@@ -265,7 +347,7 @@ UseDNS no
 
 # Brute force protection
 MaxStartups 3:30:10
-AuthenticationMethods publickey,password
+AuthenticationMethods publickey
 EOF
 
     # Install and configure fail2ban for SSH protection
@@ -310,28 +392,244 @@ EOF
         local key_info=$(ssh-keygen -l -f ~/.ssh/authorized_keys | head -1)
         info "Key info: $key_info"
     else
-        warning "SSH key validation failed - manual verification recommended"
+        error "SSH key validation failed"
+        exit 1
+    fi
+    
+    # Get current IP address
+    local ip_addr=$(ip addr show "$PRIMARY_INTERFACE" | grep -oP 'inet \K[\d.]+')
+    if [[ -z "$ip_addr" ]]; then
+        error "Could not determine IP address"
+        exit 1
+    fi
+    
+    # Display SSH connection information
+    info "===== SSH CONNECTION INFORMATION ====="
+    info "IP Address: $ip_addr"
+    info "Username: $USER"
+    info "SSH Command: ssh $USER@$ip_addr"
+    info "=================================="
+    
+    # Verify SSH connectivity
+    info "Testing SSH connectivity..."
+    if ! nc -z -w5 "$ip_addr" 22; then
+        error "SSH port 22 is not accessible"
+        exit 1
+    fi
+    success "SSH port 22 is accessible"
+    
+    # Final SSH configuration verification
+    verify_ssh_config
+}
+
+verify_ssh_config() {
+    local config_errors=0
+    
+    info "Performing final SSH configuration verification..."
+    
+    # Check SSH service status
+    if ! systemctl is-active --quiet ssh; then
+        error "SSH service is not running"
+        ((config_errors++))
+    fi
+    
+    # Check SSH configuration syntax
+    if ! sudo sshd -t; then
+        error "SSH configuration has syntax errors"
+        ((config_errors++))
+    fi
+    
+    # Check authorized_keys file
+    if [[ ! -f ~/.ssh/authorized_keys ]]; then
+        error "authorized_keys file is missing"
+        ((config_errors++))
+    elif [[ $(stat -c %a ~/.ssh/authorized_keys) != "600" ]]; then
+        error "authorized_keys has incorrect permissions"
+        ((config_errors++))
+    fi
+    
+    # Check .ssh directory permissions
+    if [[ $(stat -c %a ~/.ssh) != "700" ]]; then
+        error ".ssh directory has incorrect permissions"
+        ((config_errors++))
+    fi
+    
+    # Check if public key is properly installed
+    if ! grep -q "ssh-rsa" ~/.ssh/authorized_keys; then
+        error "No SSH public key found in authorized_keys"
+        ((config_errors++))
+    fi
+    
+    # Get IP address for connection test
+    local ip_addr=$(ip addr show "$PRIMARY_INTERFACE" | grep -oP 'inet \K[\d.]+')
+    if [[ -z "$ip_addr" ]]; then
+        error "Could not determine IP address"
+        ((config_errors++))
+    fi
+    
+    if [[ $config_errors -eq 0 ]]; then
+        success "SSH configuration verification completed successfully"
+        info "System is ready for headless operation"
+        info "===== HEADLESS CONNECTION INFORMATION ====="
+        info "IP Address: $ip_addr"
+        info "Username: $USER"
+        info "SSH Command: ssh $USER@$ip_addr"
+        info "Verify you can connect before proceeding!"
+        info "=========================================="
+    else
+        error "SSH configuration verification failed with $config_errors errors"
+        error "Please fix the issues before proceeding"
+        exit 1
     fi
 }
 
 configure_firewall() {
     section "Configuring Firewall"
     
-    info "Enabling UFW firewall..."
-    sudo ufw --force enable
+    info "Configuring UFW default policies..."
+    # Set default policies
+    sudo ufw default deny incoming
+    sudo ufw default allow outgoing
     
     info "Allowing SSH access..."
-    sudo ufw allow ssh
+    sudo ufw allow ssh comment 'SSH Access'
     
-    info "Allowing access from mining network (10.10.10.0/24)..."
-    sudo ufw allow from 10.10.10.0/24
+    info "Configuring mining and node ports..."
+    # P2Pool ports
+    sudo ufw allow 3333/tcp comment 'P2Pool Stratum'
+    sudo ufw allow 37889/tcp comment 'P2Pool P2P'
+    sudo ufw allow 37888/tcp comment 'P2Pool Mini P2P'
     
-    info "Opening metrics and monitoring ports..."
-    sudo ufw allow 9100/tcp comment "XMRig Exporter"
-    sudo ufw allow 9101/tcp comment "Node Exporter"
-    sudo ufw allow 18088/tcp comment "XMRig API"
+    # Monero node ports
+    sudo ufw allow 18080/tcp comment 'Monero P2P'
+    sudo ufw allow 18081/tcp comment 'Monero RPC'
     
-    success "Firewall configured successfully"
+    # XMRig API and monitoring ports
+    sudo ufw allow 18088/tcp comment 'XMRig API'
+    
+    info "Configuring metrics and monitoring ports..."
+    # Prometheus exporters
+    sudo ufw allow 9100/tcp comment 'XMRig Exporter'
+    sudo ufw allow 9101/tcp comment 'Node Exporter'
+    
+    info "Configuring mining network access..."
+    # Allow access from mining network
+    sudo ufw allow from 192.168.1.0/24 comment 'Mining Network'
+    
+    info "Enabling UFW..."
+    # Enable firewall with default configuration
+    if ! sudo ufw status | grep -q "Status: active"; then
+        sudo ufw --force enable
+    fi
+    
+    # Verify firewall configuration
+    verify_firewall_config
+}
+
+verify_firewall_config() {
+    info "Verifying firewall configuration..."
+    local config_errors=0
+    
+    # Check if UFW is active
+    if ! sudo ufw status | grep -q "Status: active"; then
+        error "UFW is not active"
+        ((config_errors++))
+    fi
+    
+    # Define required ports and their descriptions
+    declare -A required_ports=(
+        ["22"]="SSH"
+        ["3333"]="P2Pool Stratum"
+        ["37889"]="P2Pool P2P"
+        ["37888"]="P2Pool Mini P2P"
+        ["18080"]="Monero P2P"
+        ["18081"]="Monero RPC"
+        ["18088"]="XMRig API"
+        ["9100"]="XMRig Exporter"
+        ["9101"]="Node Exporter"
+    )
+    
+    # Check each required port
+    local ufw_status=$(sudo ufw status numbered | grep -v "Status: active")
+    for port in "${!required_ports[@]}"; do
+        if ! echo "$ufw_status" | grep -q "$port/tcp"; then
+            error "Port $port (${required_ports[$port]}) is not open"
+            ((config_errors++))
+        fi
+    done
+    
+    # Verify default policies
+    if ! sudo ufw status verbose | grep -q "Default: deny (incoming)"; then
+        error "Default incoming policy is not set to deny"
+        ((config_errors++))
+    fi
+    
+    if ! sudo ufw status verbose | grep -q "Default: allow (outgoing)"; then
+        error "Default outgoing policy is not set to allow"
+        ((config_errors++))
+    fi
+    
+    # Verify mining network access
+    if ! echo "$ufw_status" | grep -q "192.168.1.0/24"; then
+        error "Mining network (192.168.1.0/24) access is not configured"
+        ((config_errors++))
+    fi
+    
+    # Display current firewall status
+    info "Current firewall rules:"
+    sudo ufw status numbered
+    
+    if [[ $config_errors -eq 0 ]]; then
+        success "Firewall configuration verified successfully"
+        info "All required ports are open and properly configured"
+        
+        # Display port summary
+        info "=== Open Ports Summary ==="
+        info "Mining Ports:"
+        info "• P2Pool Stratum: 3333/tcp"
+        info "• P2Pool P2P: 37889/tcp"
+        info "• P2Pool Mini P2P: 37888/tcp"
+        info "• Monero P2P: 18080/tcp"
+        info "• Monero RPC: 18081/tcp"
+        info "• XMRig API: 18088/tcp"
+        info ""
+        info "Monitoring Ports:"
+        info "• XMRig Exporter: 9100/tcp"
+        info "• Node Exporter: 9101/tcp"
+        info ""
+        info "Access Ports:"
+        info "• SSH: 22/tcp"
+        info "• Mining Network: 192.168.1.0/24 (all ports)"
+        info "=========================="
+    else
+        error "Firewall configuration verification failed with $config_errors errors"
+        error "Please fix the firewall configuration before proceeding"
+        exit 1
+    fi
+    
+    # Test outbound connectivity
+    info "Testing outbound connectivity..."
+    local test_hosts=(
+        "api.github.com"
+        "pool.supportxmr.com"
+        "github.com"
+        "raw.githubusercontent.com"
+    )
+    
+    for host in "${test_hosts[@]}"; do
+        if ! nc -zw2 "$host" 443 2>/dev/null; then
+            error "Cannot connect to $host:443 - outbound connectivity issue"
+            ((config_errors++))
+        fi
+    done
+    
+    if [[ $config_errors -eq 0 ]]; then
+        success "Outbound connectivity verified successfully"
+    else
+        error "Outbound connectivity verification failed"
+        error "Please check your network configuration"
+        exit 1
+    fi
 }
 
 optimize_system() {
@@ -744,16 +1042,6 @@ prompt_reboot() {
 # ================================
 
 main() {
-    section "Module 1: System Preparation Script"
-    info "Configuring mining rig hardware optimizations"
-    info "Engineer SSH key will be installed for remote access"
-    
-    if ! confirm "Begin Module 1 system preparation?" "y"; then
-        error "User canceled installation"
-        exit 1
-    fi
-    
-    # Execute all modules in sequence with verification
     verify_root_access
     detect_network_interface
     update_system_packages
@@ -761,27 +1049,22 @@ main() {
     configure_ssh_access
     configure_firewall
     optimize_system
+    create_system_utilities
     configure_huge_pages
     apply_cpu_optimizations
-    setup_thermal_monitoring
-    create_system_utilities
-    prepare_for_module2
     
-    # Final system information and next steps
-    section "Module 1 Configuration Complete"
-    success "SSH access enabled for user: ${USER}"
-    success "Engineer public key added to authorized_keys"
-    success "Essential tools installed: bpytop, netstat, jq, and others"
-    success "System optimizations applied"
-    success "Huge pages and CPU optimizations configured"
-    success "Mining performance optimizations ready"
+    # Final verification before reboot
+    verify_headless_readiness
     
-    # Show system info
-    echo ""
-    /usr/local/bin/system-info
+    success "Module 1 installation completed successfully"
+    warning "System reboot required for all changes to take effect"
+    info "After reboot, you can proceed with Module 2 installation"
     
-    # Prompt for reboot (includes all next steps)
-    prompt_reboot
+    if confirm "Would you like to reboot now?" "y"; then
+        sudo reboot
+    else
+        warning "Please reboot the system manually before proceeding with Module 2"
+    fi
 }
 
 # ================================

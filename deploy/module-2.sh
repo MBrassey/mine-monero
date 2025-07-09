@@ -33,6 +33,100 @@ declare -A DEVICE_PROTOCOLS=(
 )
 
 # ================================
+# DEPENDENCY INSTALLATION
+# ================================
+
+install_dependencies() {
+    echo "Installing required dependencies..."
+    
+    # Ensure apt is available and updated
+    if ! command -v apt >/dev/null 2>&1; then
+        echo "Error: apt package manager not found. This script requires Ubuntu."
+        exit 1
+    fi
+    
+    # Update package lists first
+    if ! apt update; then
+        echo "Error: Failed to update package lists"
+        exit 1
+    fi
+    
+    # Base dependencies in order of importance
+    local base_deps=(
+        # Core build requirements
+        "build-essential"
+        "pkg-config"
+        
+        # I2C and USB support
+        "i2c-tools"
+        "usbutils"
+        
+        # Libraries
+        "libusb-1.0-0"
+        "libhidapi-libusb0"
+        "libmbedtls-dev"
+        "libqt5core5a"
+        "libqt5network5"
+    )
+    
+    # Install packages in groups to handle dependencies better
+    local current_group=()
+    local group_size=3
+    local i=0
+    
+    for pkg in "${base_deps[@]}"; do
+        current_group+=("$pkg")
+        ((i++))
+        
+        if [[ ${#current_group[@]} -eq $group_size ]] || [[ $i -eq ${#base_deps[@]} ]]; then
+            echo "Installing package group: ${current_group[*]}"
+            if ! apt install -y "${current_group[@]}"; then
+                echo "Error: Failed to install package group: ${current_group[*]}"
+                exit 1
+            fi
+            current_group=()
+        fi
+    done
+    
+    # Verify critical packages
+    local critical_pkgs=("i2c-tools" "usbutils" "libusb-1.0-0")
+    local missing_pkgs=()
+    
+    for pkg in "${critical_pkgs[@]}"; do
+        if ! dpkg -l | grep -q "^ii.*$pkg"; then
+            missing_pkgs+=("$pkg")
+        fi
+    done
+    
+    if [[ ${#missing_pkgs[@]} -gt 0 ]]; then
+        echo "Error: Critical packages missing after installation: ${missing_pkgs[*]}"
+        exit 1
+    fi
+    
+    # Load required kernel modules
+    local modules=("i2c-dev" "i2c-piix4" "i2c-i801")
+    for module in "${modules[@]}"; do
+        if ! lsmod | grep -q "^$module"; then
+            echo "Loading kernel module: $module"
+            if ! modprobe "$module" 2>/dev/null; then
+                echo "Warning: Failed to load $module - this may be normal if hardware is not present"
+            fi
+        fi
+    done
+    
+    # Add user to required groups
+    local groups=("plugdev" "i2c" "dialout")
+    for group in "${groups[@]}"; do
+        if ! getent group "$group" >/dev/null; then
+            groupadd "$group" 2>/dev/null || true
+        fi
+        usermod -aG "$group" "$SUDO_USER" 2>/dev/null || true
+    done
+    
+    echo "Dependencies installed successfully"
+}
+
+# ================================
 # VALIDATION FUNCTIONS
 # ================================
 
