@@ -35,12 +35,16 @@ if ! command -v openrgb &> /dev/null; then
     fi
 fi
 
-# Load required modules
-modprobe i2c-dev
-modprobe i2c-piix4
-modprobe i2c-nct6775
+# Load available i2c modules
+echo "Loading i2c modules..."
+for module in i2c-dev i2c-piix4 i2c_dev i2c_piix4; do
+    if modprobe $module 2>/dev/null; then
+        echo "Loaded $module"
+    fi
+done
 
 # Set permissions
+echo "Setting device permissions..."
 chmod 777 /dev/i2c-* 2>/dev/null || true
 chmod 777 /dev/hidraw* 2>/dev/null || true
 
@@ -48,8 +52,10 @@ chmod 777 /dev/hidraw* 2>/dev/null || true
 killall openrgb 2>/dev/null || true
 sleep 1
 
-# Direct mode, no server, just set everything red
+# Try both with and without detection
 echo "Setting all RGB devices to red..."
 openrgb --noautoconnect --mode direct --color FF0000
+sleep 1
+openrgb --mode direct --color FF0000
 
 echo "Done."
