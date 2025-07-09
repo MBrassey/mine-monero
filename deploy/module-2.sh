@@ -35,27 +35,39 @@ if ! command -v openrgb &> /dev/null; then
     fi
 fi
 
-# Load available i2c modules
-echo "Loading i2c modules..."
-for module in i2c-dev i2c-piix4 i2c_dev i2c_piix4; do
-    if modprobe $module 2>/dev/null; then
-        echo "Loaded $module"
-    fi
-done
+# Load i2c modules and setup SMBus
+echo "Setting up hardware access..."
+modprobe i2c_dev
+modprobe i2c_piix4
+modprobe i2c_smbus
 
-# Set permissions
+# Create i2c devices if they don't exist
+if [ ! -e "/dev/i2c-0" ]; then
+    mknod /dev/i2c-0 c 89 0
+fi
+if [ ! -e "/dev/i2c-1" ]; then
+    mknod /dev/i2c-1 c 89 1
+fi
+
+# Set aggressive permissions
 echo "Setting device permissions..."
-chmod 777 /dev/i2c-* 2>/dev/null || true
-chmod 777 /dev/hidraw* 2>/dev/null || true
+chown root:root /dev/i2c-* /dev/hidraw* 2>/dev/null || true
+chmod 666 /dev/i2c-* /dev/hidraw* 2>/dev/null || true
+
+# Add current user to required groups
+usermod -a -G i2c,plugdev $SUDO_USER 2>/dev/null || true
 
 # Kill any existing OpenRGB processes
 killall openrgb 2>/dev/null || true
-sleep 1
+sleep 2
 
-# Try both with and without detection
+# Try to detect SMBus devices
+echo "Detecting SMBus devices..."
+i2cdetect -l
+
+# Set colors with direct hardware access
 echo "Setting all RGB devices to red..."
-openrgb --noautoconnect --mode direct --color FF0000
+openrgb --noautoconnect --mode direct --color FF0000 --detect-smbus-devices
 sleep 1
-openrgb --mode direct --color FF0000
 
 echo "Done."
