@@ -92,7 +92,14 @@ if [ -n "$SUDO_USER" ]; then
     usermod -a -G i2c,input,video "$SUDO_USER"
 fi
 
-# Enable hardware access modules
+# Install additional tools for hardware detection
+apt-get install -y pciutils lm-sensors
+
+# Detect and configure SMBus/I2C devices
+log "Detecting SMBus/I2C devices..."
+sensors-detect --auto > /dev/null 2>&1 || true
+
+# Enable hardware access modules with specific options
 modules=(
     "i2c-dev"
     "i2c-piix4"
@@ -107,41 +114,64 @@ modules=(
     "w83627hf"
 )
 
-# Load and configure modules
+# Load and configure modules with options
 for module in "${modules[@]}"; do
-    modprobe "$module" 2>/dev/null || true
+    # Try to load with different options
+    case "$module" in
+        "i2c-piix4")
+            modprobe $module force=1 2>/dev/null || true
+            ;;
+        "i2c-i801")
+            modprobe $module force_addr=1 2>/dev/null || true
+            ;;
+        *)
+            modprobe $module 2>/dev/null || true
+            ;;
+    esac
+    
     if ! grep -q "^$module" /etc/modules; then
         echo "$module" >> /etc/modules
     fi
 done
+
+# Update module configuration
+log "Updating module configuration..."
+if ! grep -q "i2c-piix4 force=1" /etc/modprobe.d/i2c.conf 2>/dev/null; then
+    echo "options i2c-piix4 force=1" > /etc/modprobe.d/i2c.conf
+    echo "options i2c-i801 force_addr=1" >> /etc/modprobe.d/i2c.conf
+fi
 
 # Update module dependencies
 depmod -a
 
 # Set up proper SMBus permissions
 log "Setting up SMBus permissions..."
-for i2c_dev in /dev/i2c-*; do
-    if [ -e "$i2c_dev" ]; then
-        chmod 666 "$i2c_dev"
-        chown root:i2c "$i2c_dev"
+# Give access to all possible i2c devices
+for i in $(seq 0 9); do
+    if [ -e "/dev/i2c-$i" ]; then
+        chmod 666 "/dev/i2c-$i"
+        chown root:i2c "/dev/i2c-$i"
     fi
 done
 
-# Create udev rules for SMBus/I2C access
+# Create comprehensive udev rules for SMBus/I2C access
 cat > /etc/udev/rules.d/99-i2c.rules << EOF
+# Give permissions to the i2c bus
 KERNEL=="i2c-[0-9]*", GROUP="i2c", MODE="0666"
+
+# AMD SMBus
+SUBSYSTEM=="i2c-dev", DRIVER=="piix4_smbus", GROUP="i2c", MODE="0666"
+
+# Intel SMBus
+SUBSYSTEM=="i2c-dev", DRIVER=="i801_smbus", GROUP="i2c", MODE="0666"
+
+# Generic I2C
+SUBSYSTEM=="i2c-dev", GROUP="i2c", MODE="0666"
 EOF
 
-# Update udev rules with correct paths
-log "Updating udev rules..."
-# Remove any existing rules first
-rm -f /etc/udev/rules.d/60-openrgb.rules
-rm -f /usr/lib/udev/rules.d/60-openrgb.rules
-
-# Install new rules
-mkdir -p /usr/lib/udev/rules.d/
-cp 60-openrgb.rules /usr/lib/udev/rules.d/60-openrgb.rules
-chmod 644 /usr/lib/udev/rules.d/60-openrgb.rules
+# Update udev rules
+udevadm control --reload-rules
+udevadm trigger
 
 # Fix any double-slash paths
 for file in /usr/bin/openrgb /usr/share/applications/org.openrgb.OpenRGB.desktop /usr/share/icons/hicolor/128x128/apps/org.openrgb.OpenRGB.png /usr/share/metainfo/org.openrgb.OpenRGB.metainfo.xml; do
@@ -174,12 +204,17 @@ cat > /etc/systemd/system/openrgb.service << EOF
 [Unit]
 Description=OpenRGB LED Control
 After=multi-user.target
-Wants=modprobe@i2c_dev.service
+Wants=modprobe@i2c_dev.service modprobe@i2c_piix4.service modprobe@i2c_i801.service
 
 [Service]
 Type=simple
+# Load required modules with options
 ExecStartPre=/sbin/modprobe i2c_dev
-ExecStartPre=/bin/sh -c 'for i2c in /dev/i2c-*; do chmod 666 \$i2c; done'
+ExecStartPre=/sbin/modprobe i2c_piix4 force=1
+ExecStartPre=/sbin/modprobe i2c_i801 force_addr=1
+# Set permissions
+ExecStartPre=/bin/sh -c 'for i in \$(seq 0 9); do if [ -e "/dev/i2c-\$i" ]; then chmod 666 "/dev/i2c-\$i"; fi; done'
+# Start OpenRGB
 ExecStart=/usr/bin/openrgb --server --noautoconnect --brightness 100 --color ${TARGET_COLOR}
 Restart=on-failure
 RestartSec=3
@@ -188,7 +223,7 @@ Environment=DISPLAY=:0
 # Add proper device permissions
 SupplementaryGroups=i2c input video
 # Add proper capabilities
-AmbientCapabilities=CAP_SYS_RAWIO CAP_SYS_ADMIN
+AmbientCapabilities=CAP_SYS_RAWIO CAP_SYS_ADMIN CAP_IPC_LOCK
 NoNewPrivileges=true
 
 [Install]
@@ -206,7 +241,17 @@ sleep 5
 # Try to set colors now
 log "Attempting to set colors..."
 echo "Setting all devices to red (#FF0000)..."
-openrgb --noautoconnect --brightness 100 --color FF0000
+
+# Try multiple times with different approaches
+for attempt in {1..3}; do
+    echo "Attempt $attempt to set colors..."
+    # Try direct mode first
+    openrgb --noautoconnect --mode direct --brightness 100 --color FF0000
+    sleep 1
+    # Then try static mode
+    openrgb --noautoconnect --mode static --brightness 100 --color FF0000
+    sleep 1
+done
 
 # Show current status
 echo
@@ -215,13 +260,13 @@ openrgb --list-devices
 
 echo
 echo "A reboot is REQUIRED to properly initialize all hardware:"
-echo "1. Load all kernel modules"
-echo "2. Initialize SMBus and I2C controllers"
-echo "3. Apply all user permissions"
-echo "4. Initialize USB device detection"
+echo "1. Load all kernel modules with correct options"
+echo "2. Initialize SMBus and I2C controllers with proper parameters"
+echo "3. Apply all user and device permissions"
+echo "4. Initialize USB and PCI device detection"
 echo
 echo "After reboot:"
-echo "1. The systemd service will automatically set colors to #${TARGET_COLOR}"
+echo "1. The systemd service will automatically set colors to #FF0000"
 echo "2. You can verify by running: openrgb --list-devices"
 echo "3. To change colors manually: openrgb --color RRGGBB"
 echo "4. To use the GUI: just run 'openrgb'"
