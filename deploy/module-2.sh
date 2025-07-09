@@ -44,7 +44,8 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y \
     libusb-1.0-0-dev \
     libhidapi-dev \
     pkgconf \
-    cmake
+    cmake \
+    qttools5-dev-tools
 
 # Load required kernel modules
 log "Loading kernel modules..."
@@ -58,9 +59,29 @@ cd /tmp
 rm -rf OpenRGB || true
 git clone --depth 1 https://gitlab.com/CalcProgrammer1/OpenRGB
 cd OpenRGB
-qmake OpenRGB.pro
-make -j$(nproc)
-make install
+
+# Build OpenRGB
+if ! qmake OpenRGB.pro; then
+    error "Failed to run qmake"
+    exit 1
+fi
+
+if ! make -j$(nproc); then
+    error "Failed to build OpenRGB"
+    exit 1
+fi
+
+if ! sudo make install; then
+    error "Failed to install OpenRGB"
+    exit 1
+fi
+
+# Verify installation
+if ! which openrgb >/dev/null 2>&1; then
+    error "OpenRGB installation verification failed"
+    exit 1
+fi
+
 cd ..
 rm -rf OpenRGB
 
@@ -135,10 +156,27 @@ sleep 10
 
 # Set all devices to target color
 log "Setting all devices to target color..."
-if ! /usr/local/bin/openrgb --noautoconnect --brightness 100 --color ${TARGET_COLOR}; then
-    error "Failed to set RGB color. This might be normal on first boot."
-    echo "Please reboot the system and the RGB settings will be applied."
+
+# Check if any RGB devices are detected
+if ! openrgb --list-devices 2>/dev/null | grep -q "Device:"; then
+    error "No RGB devices detected. Please check your hardware connections and drivers."
+    echo "You may need to reboot for device detection to work properly."
+    echo "Would you like to reboot now? [y/N] "
+    read -r response
+    if [[ "$response" =~ ^[Yy]$ ]]; then
+        reboot
+    fi
+    exit 1
 fi
+
+# Try to set colors multiple times to ensure it takes effect
+for i in {1..3}; do
+    log "Attempt $i to set RGB color..."
+    if openrgb --noautoconnect --brightness 100 --color ${TARGET_COLOR}; then
+        break
+    fi
+    sleep 2
+done
 
 log "RGB configuration complete!"
 echo
