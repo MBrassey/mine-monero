@@ -29,36 +29,37 @@ if ! command -v openrgb &> /dev/null; then
     udevadm trigger
 fi
 
-# Load ALL necessary modules for device detection
-echo "Loading required modules..."
+# Enable i2c/SMBus access
+echo "Enabling SMBus access..."
 modprobe i2c_dev
 modprobe i2c_piix4
-modprobe i2c_smbus
-modprobe raydium_i2c
-modprobe nvme
-modprobe msr
-modprobe k10temp
+modprobe amdgpu
 
-# Set permissions for all possible devices
+# Create i2c group if it doesn't exist
+getent group i2c >/dev/null || groupadd i2c
+
+# Add current user to i2c group
+usermod -a -G i2c $SUDO_USER
+
+# Set permissions
 echo "Setting device permissions..."
-chmod 666 /dev/i2c-* 2>/dev/null || true
-chmod 666 /dev/hidraw* 2>/dev/null || true
-chmod 666 /dev/nvme* 2>/dev/null || true
-chmod 666 /dev/port 2>/dev/null || true
+chown root:i2c /dev/i2c-* 2>/dev/null || true
+chmod 660 /dev/i2c-* 2>/dev/null || true
+chmod 660 /dev/hidraw* 2>/dev/null || true
 
 # Kill any existing OpenRGB processes
 killall openrgb 2>/dev/null || true
 sleep 2
 
-# First check what devices are detected
+# Show detected devices
 echo "Detected devices:"
-openrgb --list-devices
+openrgb -l
 
 echo
 echo "Setting all devices to red..."
-# Try both methods to ensure all devices are set
-openrgb --color FF0000
-sleep 1
-openrgb --mode direct --color FF0000
+openrgb -d 0 -m direct -c FF0000
+openrgb -d 1 -m direct -c FF0000
+openrgb -d 2 -m direct -c FF0000
+openrgb -d 3 -m direct -c FF0000
 
 echo "Done."
