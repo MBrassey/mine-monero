@@ -10,13 +10,8 @@ set -e
 # Trap errors and print the line number where they occurred
 trap 'echo "Error on line $LINENO"' ERR
 
-# Ensure script is run with sudo
-if [[ $EUID -eq 0 ]]; then
-    echo "This script should not be run as root. Please run with sudo instead."
-    exit 1
-fi
-
-if [[ ! -n "$SUDO_USER" ]]; then
+# Check if running with sudo
+if [ "$EUID" -ne 0 ]; then
     echo "This script must be run with sudo"
     exit 1
 fi
