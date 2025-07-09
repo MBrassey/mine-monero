@@ -501,55 +501,6 @@ verify_ssh_config() {
     fi
 }
 
-configure_headless_boot() {
-    section "Configuring Flexible Boot Mode"
-    info "Setting up system to work with or without video card..."
-
-    # Backup original GRUB config
-    if [[ -f /etc/default/grub ]]; then
-        sudo cp /etc/default/grub /etc/default/grub.backup
-        info "GRUB config backed up"
-    fi
-
-    # Set GRUB console output for both local and serial
-    sudo sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="console=tty1 console=ttyS0,115200n8"/' /etc/default/grub
-    sudo sed -i 's/^GRUB_CMDLINE_LINUX=.*/GRUB_CMDLINE_LINUX="console=tty1 console=ttyS0,115200n8"/' /etc/default/grub
-
-    # Update GRUB
-    info "Updating GRUB configuration..."
-    sudo update-grub
-
-    # Set multi-user target (no GUI)
-    sudo systemctl set-default multi-user.target
-
-    # Enable serial console
-    sudo systemctl enable serial-getty@ttyS0.service
-
-    # Remove Plymouth (boot splash)
-    info "Removing Plymouth (boot splash)..."
-    sudo apt-get remove -y plymouth plymouth-theme-ubuntu-text
-
-    # Prevent Plymouth from being reinstalled
-    cat << 'EOF' | sudo tee /etc/apt/preferences.d/plymouth > /dev/null
-Package: plymouth*
-Pin: release *
-Pin-Priority: -1
-EOF
-
-    # Emergency script to restore video output if needed
-    cat << 'EOF' | sudo tee /usr/local/bin/emergency-video > /dev/null
-#!/bin/bash
-sudo sed -i 's/console=tty1 console=ttyS0,115200n8/quiet splash/' /etc/default/grub
-sudo update-grub
-echo "Video mode restored. Please reboot."
-EOF
-    sudo chmod +x /usr/local/bin/emergency-video
-
-    success "Flexible boot mode configured"
-    info "System will now work with or without video card"
-    info "If video output is needed later, run: emergency-video"
-}
-
 verify_firewall_config() {
     section "Verifying Firewall Configuration"
     local config_errors=0
@@ -1235,105 +1186,6 @@ prompt_reboot() {
     fi
 }
 
-verify_headless_readiness() {
-    section "Verifying Headless Operation Readiness"
-    
-    local ready=true
-    local errors=0
-    
-    # Check SSH service
-    info "1. Checking SSH service..."
-    if systemctl is-active --quiet ssh; then
-        success "✓ SSH service is active"
-    else
-        error "✗ SSH service is not running"
-        ready=false
-        ((errors++))
-    fi
-    
-    # Check network connectivity
-    info "2. Checking network connectivity..."
-    if curl -s --head --max-time 5 google.com >/dev/null 2>&1; then
-        success "✓ Internet connectivity verified"
-    else
-        # Try another site in case google.com is blocked
-        if curl -s --head --max-time 5 cloudflare.com >/dev/null 2>&1; then
-            success "✓ Internet connectivity verified"
-        else
-            error "✗ No internet connectivity"
-            ready=false
-            ((errors++))
-        fi
-    fi
-    
-    # Check firewall status
-    info "3. Checking firewall status..."
-    if sudo ufw status | grep -q "Status: active"; then
-        success "✓ Firewall is active"
-        
-        # Check SSH port specifically
-        if sudo ufw status | grep -q "22/tcp.*ALLOW"; then
-            success "✓ SSH port 22 is allowed through firewall"
-        else
-            error "✗ SSH port 22 is not allowed through firewall"
-            ready=false
-            ((errors++))
-        fi
-    else
-        error "✗ Firewall is not active"
-        ready=false
-        ((errors++))
-    fi
-    
-    # Get IP address
-    local ip_addr=$(ip addr show "$PRIMARY_INTERFACE" | grep -oP 'inet \K[\d.]+')
-    if [[ -z "$ip_addr" ]]; then
-        error "✗ Could not determine IP address"
-        ready=false
-        ((errors++))
-    fi
-    
-    # Check SSH key setup
-    info "4. Checking SSH key configuration..."
-    if [[ -f "/home/$SUDO_USER/.ssh/authorized_keys" ]]; then
-        if ssh-keygen -l -f "/home/$SUDO_USER/.ssh/authorized_keys" >/dev/null 2>&1; then
-            success "✓ SSH public key is properly installed"
-        else
-            error "✗ SSH public key validation failed"
-            ready=false
-            ((errors++))
-        fi
-    else
-        error "✗ SSH authorized_keys file not found"
-        ready=false
-        ((errors++))
-    fi
-    
-    if $ready; then
-        success "System is ready for headless operation"
-        info "===== FINAL CONNECTION INFORMATION ====="
-        info "IP Address: $ip_addr"
-        info "Username: $SUDO_USER"
-        info "SSH Command: ssh $SUDO_USER@$ip_addr"
-        info "======================================="
-        info "IMPORTANT: Before proceeding:"
-        info "1. Open a new terminal"
-        info "2. Test SSH connection: ssh $SUDO_USER@$ip_addr"
-        info "3. Verify you can connect successfully"
-        info "4. Only then proceed with system reboot"
-        
-        if ! confirm "Have you verified SSH connection works from another terminal?" "n"; then
-            error "Please verify SSH connection before proceeding"
-            exit 1
-        fi
-    else
-        error "System is not ready for headless operation"
-        error "Found $errors issues that need to be fixed"
-        error "Please review the errors above and fix the configuration"
-        exit 1
-    fi
-}
-
 # ================================
 # MAIN EXECUTION FUNCTION
 # ================================
@@ -1363,10 +1215,6 @@ main() {
     configure_huge_pages
     apply_cpu_optimizations
     setup_thermal_monitoring
-    configure_headless_boot
-    
-    # Final verification before reboot
-    verify_headless_readiness
     
     success "Module 1 installation completed successfully"
     
