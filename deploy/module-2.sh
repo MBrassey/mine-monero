@@ -16,7 +16,6 @@ echo "   ASRock B650M PG Lightning WiFi 6E Motherboard"
 echo "   AMD Wraith Prism CPU Cooler"
 echo "   XPG Lancer Blade RGB RAM"
 echo "   XPG SPECTRIX S20G M.2 SSD"
-echo "   GPU RGB (NVIDIA/AMD)"
 echo "   Any other OpenRGB-compatible RGB devices"
 echo
 
@@ -176,9 +175,54 @@ SUBSYSTEMS=="usb", ATTR{idVendor}=="2516", ATTR{idProduct}=="0047", MODE="0666"
 SUBSYSTEMS=="usb", ATTR{idVendor}=="125f", MODE="0666"
 EOF
 
-# Update udev rules
+# Add specific udev rules for AMD Wraith Prism and XPG devices
+echo "Adding device-specific udev rules..."
+cat > /etc/udev/rules.d/60-openrgb.rules << EOF
+# AMD Wraith Prism
+SUBSYSTEMS=="usb", ATTR{idVendor}=="2516", ATTR{idProduct}=="0051", GROUP="input", MODE="0666"
+SUBSYSTEMS=="usb", ATTR{idVendor}=="2516", ATTR{idProduct}=="0047", GROUP="input", MODE="0666"
+SUBSYSTEMS=="usb", ATTR{idVendor}=="2516", ATTR{idProduct}=="0020", GROUP="input", MODE="0666"
+
+# XPG SPECTRIX Devices
+SUBSYSTEMS=="usb", ATTR{idVendor}=="125f", ATTR{idProduct}=="a4a1", GROUP="input", MODE="0666"
+SUBSYSTEMS=="usb", ATTR{idVendor}=="125f", ATTR{idProduct}=="a4a2", GROUP="input", MODE="0666"
+SUBSYSTEMS=="usb", ATTR{idVendor}=="125f", ATTR{idProduct}=="*", GROUP="input", MODE="0666"
+
+# Generic HID Devices
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", MODE="0666"
+EOF
+
+# Ensure USB devices are accessible
+echo "Setting up USB access..."
+usermod -a -G input $SUDO_USER
+usermod -a -G plugdev $SUDO_USER 2>/dev/null || true
+
+# Reset USB devices to ensure they're detected
+echo "Resetting USB devices..."
+for device in "2516" "125f"; do
+    for dev in $(find /sys/bus/usb/devices/ -name idVendor 2>/dev/null); do
+        if grep -q "$device" "$dev" 2>/dev/null; then
+            echo "Resetting USB device: $device"
+            echo "0" > "$(dirname "$dev")/authorized"
+            sleep 1
+            echo "1" > "$(dirname "$dev")/authorized"
+        fi
+    done
+done
+
+# Reload udev rules
 udevadm control --reload-rules
 udevadm trigger
+
+# Install additional dependencies for USB access
+DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    libusb-1.0-0 \
+    libhidapi-libusb0 \
+    libhidapi-hidraw0
+
+# Create symlinks for USB access
+ln -sf /usr/lib/x86_64-linux-gnu/libhidapi-libusb.so.0 /usr/lib/x86_64-linux-gnu/libhidapi-libusb.so 2>/dev/null || true
+ln -sf /usr/lib/x86_64-linux-gnu/libhidapi-hidraw.so.0 /usr/lib/x86_64-linux-gnu/libhidapi-hidraw.so 2>/dev/null || true
 
 # Fix any double-slash paths
 for file in /usr/bin/openrgb /usr/share/applications/org.openrgb.OpenRGB.desktop /usr/share/icons/hicolor/128x128/apps/org.openrgb.OpenRGB.png /usr/share/metainfo/org.openrgb.OpenRGB.metainfo.xml; do
@@ -214,86 +258,64 @@ killall openrgb 2>/dev/null || true
 sleep 2
 
 # Start fresh OpenRGB server
+echo "Starting OpenRGB server..."
 openrgb --server &
-sleep 3
+sleep 5
 
-# Set each device individually
-echo "Setting RAM modules..."
-openrgb --device 0 --mode direct --color ${TARGET_COLOR}
-openrgb --device 1 --mode direct --color ${TARGET_COLOR}
-sleep 1
-
-echo "Setting motherboard..."
-# Try different modes for the motherboard
-openrgb --device 2 --mode direct --color ${TARGET_COLOR}
-sleep 1
-openrgb --device 2 --mode static --color ${TARGET_COLOR}
-sleep 1
-
-# Try to detect and set AMD Wraith Prism
-echo "Setting CPU Cooler..."
-# Add specific udev rules for AMD Wraith Prism
-cat >> /etc/udev/rules.d/99-i2c.rules << EOF
-
-# AMD Wraith Prism (Updated rules)
-SUBSYSTEMS=="usb", ATTRS{idVendor}=="2516", ATTRS{idProduct}=="0051", GROUP="i2c", MODE="0666"
-SUBSYSTEMS=="usb", ATTRS{idVendor}=="2516", ATTRS{idProduct}=="0047", GROUP="i2c", MODE="0666"
-SUBSYSTEMS=="usb", ATTRS{idVendor}=="2516", ATTRS{idProduct}=="0020", GROUP="i2c", MODE="0666"
-EOF
-
-# Detect AMD Wraith Prism with multiple attempts
-for i in {0..10}; do
-    if openrgb --device $i 2>/dev/null | grep -qi "AMD.*Wraith.*Prism"; then
-        echo "Found AMD Wraith Prism at device $i"
-        # Try multiple times with different modes
-        for mode in "direct" "static" "rainbow" "breathing"; do
-            openrgb --device $i --mode $mode --color ${TARGET_COLOR}
-            sleep 0.5
-        done
-        # Force direct mode last
-        openrgb --device $i --mode direct --color ${TARGET_COLOR}
-        break
-    fi
-done
-
-# Try to detect and set XPG SPECTRIX
-echo "Setting M.2 SSD..."
-# Add specific udev rules for XPG devices
-cat >> /etc/udev/rules.d/99-i2c.rules << EOF
-
-# XPG SPECTRIX Devices (Updated rules)
-SUBSYSTEMS=="usb", ATTRS{idVendor}=="125f", ATTRS{idProduct}=="a4a1", GROUP="i2c", MODE="0666"
-SUBSYSTEMS=="usb", ATTRS{idVendor}=="125f", ATTRS{idProduct}=="a4a2", GROUP="i2c", MODE="0666"
-SUBSYSTEMS=="usb", ATTRS{idVendor}=="125f", ATTRS{idProduct}=="*", GROUP="i2c", MODE="0666"
-EOF
-
-# Detect XPG SPECTRIX with multiple attempts
-for i in {0..10}; do
-    if openrgb --device $i 2>/dev/null | grep -qi "XPG.*SPECTRIX\|ADATA"; then
-        echo "Found XPG SPECTRIX at device $i"
-        # Try multiple times with different modes
-        for mode in "direct" "static" "rainbow"; do
-            openrgb --device $i --mode $mode --color ${TARGET_COLOR}
-            sleep 0.5
-        done
-        # Force direct mode last
-        openrgb --device $i --mode direct --color ${TARGET_COLOR}
-        break
-    fi
-done
-
-# Reload udev rules immediately
-udevadm control --reload-rules
-udevadm trigger
+# Detect devices
+echo "Detecting devices..."
+openrgb --list-devices
+sleep 2
 
 # Set all devices together with different modes
 echo "Setting all devices together..."
-modes=("direct" "static")
-for mode in "${modes[@]}"; do
-    echo "Trying mode: $mode"
-    openrgb --mode $mode --color ${TARGET_COLOR}
-    sleep 1
+
+# First, get a list of all devices
+devices=$(openrgb --list-devices | grep -n "^[0-9]" | cut -d: -f1)
+
+for device in $devices; do
+    echo "Setting device $device..."
+    
+    # Try to set the entire device
+    openrgb --device $device --mode direct --color ${TARGET_COLOR}
+    sleep 0.5
+    
+    # Set each zone individually
+    zones=$(openrgb --list-devices | grep -A1 "^$device:" | grep "Zones:" | cut -d: -f2- | tr "'" '\n' | grep -v "^[ ]*$" | grep -v "Zones")
+    for zone in $zones; do
+        echo "  Setting zone: $zone"
+        openrgb --device $device --zone "$zone" --color ${TARGET_COLOR}
+        sleep 0.2
+    done
+    
+    # Set each LED individually
+    leds=$(openrgb --list-devices | grep -A1 "^$device:" | grep "LEDs:" | cut -d: -f2- | tr "'" '\n' | grep -v "^[ ]*$" | grep -v "LEDs")
+    for led in $leds; do
+        echo "  Setting LED: $led"
+        openrgb --device $device --led "$led" --color ${TARGET_COLOR}
+        sleep 0.1
+    done
+    
+    # Try different modes to ensure the color sticks
+    for mode in "direct" "static" "breathing" "flash" "rainbow"; do
+        openrgb --device $device --mode $mode --color ${TARGET_COLOR}
+        sleep 0.5
+    done
+    
+    # Force back to direct mode
+    openrgb --device $device --mode direct --color ${TARGET_COLOR}
 done
+
+# Final pass - set everything at once
+echo "Final pass - setting all devices..."
+openrgb --mode direct --color ${TARGET_COLOR}
+sleep 1
+openrgb --mode static --color ${TARGET_COLOR}
+
+# Verify current status
+echo
+echo "Current OpenRGB device status:"
+openrgb --list-devices
 
 # Create a profile for the current settings
 echo "Creating default color profile..."
