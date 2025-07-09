@@ -145,8 +145,8 @@ rm -rf /home/$SUDO_USER/.config/OpenRGB
 mkdir -p /root/.config/OpenRGB
 mkdir -p /home/$SUDO_USER/.config/OpenRGB
 
-# Set colors directly first
-log "Setting colors for all devices..."
+# Set colors for all devices
+log "Setting colors for all detected devices..."
 
 # Kill any existing OpenRGB processes and server
 pkill openrgb || true
@@ -156,37 +156,11 @@ sleep 2
 openrgb --server &
 sleep 3
 
-# Set CPU Cooler - Device 0
-log "Setting CPU Cooler..."
-openrgb --device 0 --mode direct --color ${TARGET_COLOR}
-sleep 1
-openrgb --device 0 --zone 0 --color ${TARGET_COLOR}  # Logo
-openrgb --device 0 --zone 1 --color ${TARGET_COLOR}  # Fan
-openrgb --device 0 --zone 2 --color ${TARGET_COLOR}  # Ring
-sleep 1
-
-# Set Motherboard - Device 1
-log "Setting Motherboard..."
-openrgb --device 1 --mode direct --color ${TARGET_COLOR}
-sleep 1
-for i in {0..4}; do
-    openrgb --device 1 --zone $i --color ${TARGET_COLOR}
-    sleep 0.2
-done
-
-# Try to detect and set RAM
-log "Setting RAM..."
-for i in {2..5}; do
-    openrgb --device $i --mode direct --color ${TARGET_COLOR} 2>/dev/null || true
-    sleep 0.2
-done
-
-# Final pass - set everything
-log "Final pass - setting all devices..."
+# Set all devices to red with a single command
 openrgb --mode direct --color ${TARGET_COLOR}
-sleep 1
+sleep 2
 
-# Update systemd service
+# Update systemd service with simplified approach
 cat > /etc/systemd/system/openrgb.service << EOF
 [Unit]
 Description=OpenRGB LED Control
@@ -197,27 +171,7 @@ StartLimitIntervalSec=0
 Type=oneshot
 RemainAfterExit=yes
 ExecStartPre=/bin/sleep 5
-
-# Start server and set colors
-ExecStart=/bin/bash -c '\
-    /usr/bin/openrgb --server & \
-    sleep 3 && \
-    /usr/bin/openrgb --device 0 --mode direct --color ${TARGET_COLOR} && \
-    /usr/bin/openrgb --device 0 --zone 0 --color ${TARGET_COLOR} && \
-    /usr/bin/openrgb --device 0 --zone 1 --color ${TARGET_COLOR} && \
-    /usr/bin/openrgb --device 0 --zone 2 --color ${TARGET_COLOR} && \
-    sleep 1 && \
-    /usr/bin/openrgb --device 1 --mode direct --color ${TARGET_COLOR} && \
-    for i in {0..4}; do \
-        /usr/bin/openrgb --device 1 --zone $i --color ${TARGET_COLOR}; \
-        sleep 0.2; \
-    done && \
-    for i in {2..5}; do \
-        /usr/bin/openrgb --device $i --mode direct --color ${TARGET_COLOR} 2>/dev/null || true; \
-        sleep 0.2; \
-    done && \
-    sleep 1 && \
-    /usr/bin/openrgb --mode direct --color ${TARGET_COLOR}'
+ExecStart=/bin/bash -c '/usr/bin/openrgb --server & sleep 3 && /usr/bin/openrgb --mode direct --color ${TARGET_COLOR}'
 
 [Install]
 WantedBy=multi-user.target
