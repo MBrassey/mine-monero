@@ -212,6 +212,12 @@ install_essential_tools() {
         "ufw"
         "iproute2"
         "systemd"
+        "curl"               # Required for network checks
+        "iputils-ping"       # Required for network checks
+        "netcat-openbsd"    # Required for port checks
+        "net-tools"         # Required for network tools
+        "openssh-server"    # Required for SSH
+        "fail2ban"          # Required for SSH security
     )
     
     info "Installing base packages..."
@@ -230,11 +236,27 @@ install_essential_tools() {
     
     # Install base packages
     info "Installing base packages..."
-    if ! sudo apt install -y "${base_packages[@]}"; then
+    if ! sudo DEBIAN_FRONTEND=noninteractive apt install -y "${base_packages[@]}"; then
         error "Failed to install base packages"
         exit 1
     fi
     success "Base packages installed successfully"
+    
+    # Verify critical networking tools
+    local critical_network_tools=("curl" "ping" "nc" "netstat" "ssh")
+    local missing_tools=()
+    
+    for tool in "${critical_network_tools[@]}"; do
+        if ! command -v "$tool" >/dev/null 2>&1; then
+            missing_tools+=("$tool")
+        fi
+    done
+    
+    if [[ ${#missing_tools[@]} -gt 0 ]]; then
+        error "Critical networking tools missing after installation: ${missing_tools[*]}"
+        exit 1
+    fi
+    success "Critical networking tools verified"
     
     # Define essential packages in order of importance
     local essential_packages=(
@@ -244,21 +266,18 @@ install_essential_tools() {
         "git"
         
         # System utilities
-        "curl"
-        "wget"
-        "jq"
         "vim"
+        "jq"
+        "wget"
         
         # Monitoring tools
         "htop"
         "bpytop"
-        "net-tools"
         "iotop"
         "iftop"
         "lm-sensors"
         
         # Network tools
-        "openssh-server"
         "ethtool"
         "tcpdump"
         
@@ -277,13 +296,13 @@ install_essential_tools() {
     
     info "Installing ${#essential_packages[@]} essential packages..."
     
-    # Install all packages at once instead of in groups
+    # Install all packages at once
     if ! sudo DEBIAN_FRONTEND=noninteractive apt install -y "${essential_packages[@]}"; then
-        warning "Some packages may have failed to install. Continuing anyway..."
+        warning "Some non-critical packages may have failed to install. Continuing..."
     fi
     
     # Verify critical tools are installed
-    local critical_tools=("gcc" "make" "git" "curl" "wget")
+    local critical_tools=("gcc" "make" "git")
     local missing_tools=()
     
     for tool in "${critical_tools[@]}"; do
@@ -293,7 +312,7 @@ install_essential_tools() {
     done
     
     if [[ ${#missing_tools[@]} -gt 0 ]]; then
-        error "Critical tools missing after installation: ${missing_tools[*]}"
+        error "Critical build tools missing after installation: ${missing_tools[*]}"
         exit 1
     fi
     
@@ -1186,12 +1205,17 @@ verify_headless_readiness() {
     
     # Check network connectivity
     info "2. Checking network connectivity..."
-    if ping -c 1 8.8.8.8 >/dev/null 2>&1; then
+    if curl -s --head --max-time 5 google.com >/dev/null 2>&1; then
         success "✓ Internet connectivity verified"
     else
-        error "✗ No internet connectivity"
-        ready=false
-        ((errors++))
+        # Try another site in case google.com is blocked
+        if curl -s --head --max-time 5 cloudflare.com >/dev/null 2>&1; then
+            success "✓ Internet connectivity verified"
+        else
+            error "✗ No internet connectivity"
+            ready=false
+            ((errors++))
+        fi
     fi
     
     # Check firewall status
