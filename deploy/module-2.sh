@@ -218,35 +218,35 @@ sleep 2
 
 # Set each device individually
 echo "Setting RAM modules..."
-openrgb --direct --device 0 --mode direct --color ${TARGET_COLOR}
-openrgb --direct --device 1 --mode direct --color ${TARGET_COLOR}
+openrgb --device 0 --mode direct --color ${TARGET_COLOR}
+openrgb --device 1 --mode direct --color ${TARGET_COLOR}
 sleep 1
 
 echo "Setting motherboard and connected devices..."
 # First set the main motherboard
-openrgb --direct --device 2 --mode direct --color ${TARGET_COLOR}
+openrgb --device 2 --mode direct --color ${TARGET_COLOR}
 sleep 1
 
 # Now set each addressable header individually
 echo "Setting Addressable Headers..."
 # CPU Cooler is on ADDR_LED3
-openrgb --direct --device 2 --zone "Addressable Header 3/Audio" --mode direct --color ${TARGET_COLOR}
+openrgb --device 2 --zone 4 --mode direct --color ${TARGET_COLOR}
 sleep 1
 
 # Try other headers for the XPG NVMe
 echo "Setting other headers (for XPG NVMe)..."
-openrgb --direct --device 2 --zone "Addressable Header 1" --mode direct --color ${TARGET_COLOR}
-openrgb --direct --device 2 --zone "Addressable Header 2" --mode direct --color ${TARGET_COLOR}
+openrgb --device 2 --zone 1 --mode direct --color ${TARGET_COLOR}
+openrgb --device 2 --zone 2 --mode direct --color ${TARGET_COLOR}
 sleep 1
 
 # Set PCB LEDs
 echo "Setting motherboard PCB LEDs..."
-openrgb --direct --device 2 --zone "PCB" --mode direct --color ${TARGET_COLOR}
+openrgb --device 2 --zone 3 --mode direct --color ${TARGET_COLOR}
 sleep 1
 
 # Set RGB LED header
 echo "Setting RGB LED header..."
-openrgb --direct --device 2 --zone "RGB LED 1 Header" --mode direct --color ${TARGET_COLOR}
+openrgb --device 2 --zone 0 --mode direct --color ${TARGET_COLOR}
 sleep 1
 
 # Try different modes for all zones
@@ -254,13 +254,13 @@ echo "Setting all zones with different modes..."
 for mode in direct static; do
     echo "Trying mode: $mode"
     # Set all motherboard zones
-    openrgb --direct --device 2 --mode $mode --color ${TARGET_COLOR}
+    openrgb --device 2 --mode $mode --color ${TARGET_COLOR}
     sleep 1
 done
 
 # Show current status
 echo "Currently detected devices and their status:"
-openrgb --direct --list-devices
+openrgb --list-devices
 
 # Check if we found the CPU cooler
 if ! grep -qi "AMD\|Wraith\|CM" /tmp/openrgb.log; then
@@ -354,16 +354,16 @@ ExecStartPre=/sbin/modprobe i2c_i801 force_addr=1
 ExecStartPre=/bin/sh -c 'for i in \$(seq 0 9); do if [ -e "/dev/i2c-\$i" ]; then chmod 666 "/dev/i2c-\$i"; fi; done'
 ExecStartPre=/bin/sh -c 'for dev in /dev/hidraw*; do chmod 666 "\$dev"; done'
 # Set RAM colors
-ExecStart=/usr/bin/openrgb --direct --device 0 --mode direct --color ${TARGET_COLOR}
-ExecStart=/usr/bin/openrgb --direct --device 1 --mode direct --color ${TARGET_COLOR}
+ExecStart=/usr/bin/openrgb --device 0 --mode direct --color ${TARGET_COLOR}
+ExecStart=/usr/bin/openrgb --device 1 --mode direct --color ${TARGET_COLOR}
 # Set motherboard and all headers
-ExecStart=/usr/bin/openrgb --direct --device 2 --mode direct --color ${TARGET_COLOR}
+ExecStart=/usr/bin/openrgb --device 2 --mode direct --color ${TARGET_COLOR}
 # Set specific zones
-ExecStart=/usr/bin/openrgb --direct --device 2 --zone "Addressable Header 3/Audio" --mode direct --color ${TARGET_COLOR}
-ExecStart=/usr/bin/openrgb --direct --device 2 --zone "Addressable Header 1" --mode direct --color ${TARGET_COLOR}
-ExecStart=/usr/bin/openrgb --direct --device 2 --zone "Addressable Header 2" --mode direct --color ${TARGET_COLOR}
-ExecStart=/usr/bin/openrgb --direct --device 2 --zone "PCB" --mode direct --color ${TARGET_COLOR}
-ExecStart=/usr/bin/openrgb --direct --device 2 --zone "RGB LED 1 Header" --mode direct --color ${TARGET_COLOR}
+ExecStart=/usr/bin/openrgb --device 2 --zone 4 --mode direct --color ${TARGET_COLOR}
+ExecStart=/usr/bin/openrgb --device 2 --zone 1 --mode direct --color ${TARGET_COLOR}
+ExecStart=/usr/bin/openrgb --device 2 --zone 2 --mode direct --color ${TARGET_COLOR}
+ExecStart=/usr/bin/openrgb --device 2 --zone 3 --mode direct --color ${TARGET_COLOR}
+ExecStart=/usr/bin/openrgb --device 2 --zone 0 --mode direct --color ${TARGET_COLOR}
 User=root
 Environment=DISPLAY=:0
 # Add proper device permissions
