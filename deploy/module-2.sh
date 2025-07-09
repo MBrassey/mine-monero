@@ -3,16 +3,51 @@
 # Check if running with sudo
 if [ "$EUID" -ne 0 ]; then
     echo "Run with sudo"
-        exit 1
-    fi
-    
+    exit 1
+fi
+
 # Basic logging
 log() { echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1"; }
 error() { echo "[$(date +'%Y-%m-%d %H:%M:%S')] ERROR: $1" >&2; }
 
+# Cleanup function
+cleanup() {
+    log "Cleaning up previous installation..."
+    
+    # Stop services
+    systemctl stop openrgb 2>/dev/null || true
+    systemctl disable openrgb 2>/dev/null || true
+    
+    # Kill any running instances
+    killall openrgb 2>/dev/null || true
+    
+    # Remove old files
+    rm -f /etc/systemd/system/openrgb.service
+    rm -f /etc/udev/rules.d/60-openrgb.rules
+    rm -f /usr/lib/udev/rules.d/60-openrgb.rules
+    rm -rf /root/.config/OpenRGB
+    
+    # Clean up any leftover USB rules
+    udevadm control --reload-rules
+    udevadm trigger
+    
+    # Reset modules
+    for module in i2c_dev i2c_piix4 i2c_i801 ch341 usbhid; do
+        modprobe -r $module 2>/dev/null || true
+        sleep 1
+        modprobe $module 2>/dev/null || true
+        sleep 1
+    done
+    
+    log "Cleanup complete"
+}
+
+# Run cleanup first
+cleanup
+
 echo "=== Universal RGB Control Script for Ubuntu 24.04 ==="
 echo "Compatible with: ALL OpenRGB-supported devices including:"
-echo "   ASRock B650M PG Lightning WiFi 6E Motherboard"
+echo "   ASRock B650M PG Lightning WiFi Motherboard"
 echo "   AMD Wraith Prism CPU Cooler"
 echo "   XPG Lancer Blade RGB RAM"
 echo "   XPG SPECTRIX S20G M.2 SSD"
@@ -21,7 +56,6 @@ echo
 
 # Set target color (red by default)
 TARGET_COLOR="FF0000"
-
 echo "Target Color: #${TARGET_COLOR}"
 echo
 
@@ -30,21 +64,17 @@ log "Installing dependencies..."
 # Disable PackageKit temporarily for apt operations
 systemctl stop packagekit >/dev/null 2>&1 || true
 
-DEBIAN_FRONTEND=noninteractive apt-get update
-DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    i2c-tools \
-    wget \
-    git \
-    build-essential \
-    qtbase5-dev \
-    qtchooser \
-    qt5-qmake \
-    qtbase5-dev-tools \
-    libusb-1.0-0-dev \
-    libhidapi-dev \
-    pkgconf \
-    cmake \
-    qttools5-dev-tools
+# Update package lists if they're older than 1 hour
+if [ ! -f /var/cache/apt/pkgcache.bin ] || [ $(( $(date +%s) - $(stat -c %Y /var/cache/apt/pkgcache.bin) )) -gt 3600 ]; then
+    DEBIAN_FRONTEND=noninteractive apt-get update
+fi
+
+# Install packages if not already installed
+for pkg in i2c-tools wget git build-essential qtbase5-dev qtchooser qt5-qmake qtbase5-dev-tools libusb-1.0-0-dev libhidapi-dev pkgconf cmake qttools5-dev-tools pciutils lm-sensors libusb-1.0-0 libhidapi-libusb0 libhidapi-hidraw0; do
+    if ! dpkg -l | grep -q "^ii  $pkg "; then
+        DEBIAN_FRONTEND=noninteractive apt-get install -y $pkg
+    fi
+done
 
 # Build OpenRGB from source
 log "Building OpenRGB from source..."
@@ -68,6 +98,11 @@ if ! make -j$(nproc); then
     exit 1
 fi
 
+# Stop any running instances before installing
+systemctl stop openrgb 2>/dev/null || true
+killall openrgb 2>/dev/null || true
+sleep 2
+
 # Install the binary and support files
 log "Installing OpenRGB..."
 make install INSTALL_ROOT=/ || true
@@ -82,267 +117,34 @@ fi
 log "Setting up hardware access..."
 
 # Create i2c group if it doesn't exist
-if ! getent group i2c >/dev/null; then
-    groupadd i2c
-fi
+getent group i2c >/dev/null || groupadd i2c
 
-# Add current user to required groups
+# Add current user to required groups if not already in them
 if [ -n "$SUDO_USER" ]; then
-    usermod -a -G i2c,input,video "$SUDO_USER"
-fi
-
-# Install additional tools for hardware detection
-apt-get install -y pciutils lm-sensors
-
-# Detect and configure SMBus/I2C devices
-log "Detecting SMBus/I2C devices..."
-sensors-detect --auto > /dev/null 2>&1 || true
-
-# Enable hardware access modules with specific options
-modules=(
-    "i2c-dev"
-    "i2c-piix4"
-    "i2c-i801"
-    "i2c-nct6775"
-    "i2c-acpi"
-    "i2c_hid"
-    "ch341"
-    "it87"
-    "nct6775"
-    "w83795"
-    "w83627hf"
-)
-
-# Load and configure modules with options
-for module in "${modules[@]}"; do
-    # Try to load with different options
-    case "$module" in
-        "i2c-piix4")
-            modprobe $module force=1 2>/dev/null || true
-            ;;
-        "i2c-i801")
-            modprobe $module force_addr=1 2>/dev/null || true
-            ;;
-        *)
-            modprobe $module 2>/dev/null || true
-            ;;
-    esac
-    
-    if ! grep -q "^$module" /etc/modules; then
-        echo "$module" >> /etc/modules
-    fi
-done
-
-# Update module configuration
-log "Updating module configuration..."
-if ! grep -q "i2c-piix4 force=1" /etc/modprobe.d/i2c.conf 2>/dev/null; then
-    echo "options i2c-piix4 force=1" > /etc/modprobe.d/i2c.conf
-    echo "options i2c-i801 force_addr=1" >> /etc/modprobe.d/i2c.conf
-fi
-
-# Update module dependencies
-depmod -a
-
-# Set up proper SMBus permissions
-log "Setting up SMBus permissions..."
-# Give access to all possible i2c devices
-for i in $(seq 0 9); do
-    if [ -e "/dev/i2c-$i" ]; then
-        chmod 666 "/dev/i2c-$i"
-        chown root:i2c "/dev/i2c-$i"
-    fi
-done
-
-# Create comprehensive udev rules for SMBus/I2C access
-cat > /etc/udev/rules.d/99-i2c.rules << EOF
-# Give permissions to the i2c bus
-KERNEL=="i2c-[0-9]*", GROUP="i2c", MODE="0666"
-
-# AMD SMBus
-SUBSYSTEM=="i2c-dev", DRIVER=="piix4_smbus", GROUP="i2c", MODE="0666"
-
-# Intel SMBus
-SUBSYSTEM=="i2c-dev", DRIVER=="i801_smbus", GROUP="i2c", MODE="0666"
-
-# Generic I2C
-SUBSYSTEM=="i2c-dev", GROUP="i2c", MODE="0666"
-
-# AMD Wraith Prism
-SUBSYSTEMS=="usb", ATTR{idVendor}=="2516", ATTR{idProduct}=="0051", MODE="0666"
-SUBSYSTEMS=="usb", ATTR{idVendor}=="2516", ATTR{idProduct}=="0047", MODE="0666"
-
-# XPG/ADATA Products
-SUBSYSTEMS=="usb", ATTR{idVendor}=="125f", MODE="0666"
-EOF
-
-# Add specific udev rules for AMD Wraith Prism and XPG devices
-echo "Adding device-specific udev rules..."
-cat > /etc/udev/rules.d/60-openrgb.rules << EOF
-# AMD Wraith Prism
-SUBSYSTEMS=="usb", ATTR{idVendor}=="2516", ATTR{idProduct}=="0051", GROUP="input", MODE="0666"
-SUBSYSTEMS=="usb", ATTR{idVendor}=="2516", ATTR{idProduct}=="0047", GROUP="input", MODE="0666"
-SUBSYSTEMS=="usb", ATTR{idVendor}=="2516", ATTR{idProduct}=="0020", GROUP="input", MODE="0666"
-
-# XPG SPECTRIX Devices
-SUBSYSTEMS=="usb", ATTR{idVendor}=="125f", ATTR{idProduct}=="a4a1", GROUP="input", MODE="0666"
-SUBSYSTEMS=="usb", ATTR{idVendor}=="125f", ATTR{idProduct}=="a4a2", GROUP="input", MODE="0666"
-SUBSYSTEMS=="usb", ATTR{idVendor}=="125f", ATTR{idProduct}=="*", GROUP="input", MODE="0666"
-
-# Generic HID Devices
-KERNEL=="hidraw*", SUBSYSTEM=="hidraw", MODE="0666"
-EOF
-
-# Ensure USB devices are accessible
-echo "Setting up USB access..."
-usermod -a -G input $SUDO_USER
-usermod -a -G plugdev $SUDO_USER 2>/dev/null || true
-
-# Reset USB devices to ensure they're detected
-echo "Resetting USB devices..."
-for device in "2516" "125f"; do
-    for dev in $(find /sys/bus/usb/devices/ -name idVendor 2>/dev/null); do
-        if grep -q "$device" "$dev" 2>/dev/null; then
-            echo "Resetting USB device: $device"
-            echo "0" > "$(dirname "$dev")/authorized"
-            sleep 1
-            echo "1" > "$(dirname "$dev")/authorized"
+    for group in i2c input video plugdev; do
+        if ! groups "$SUDO_USER" | grep -q "\b${group}\b"; then
+            usermod -a -G "$group" "$SUDO_USER"
         fi
     done
-done
+fi
 
-# Reload udev rules
-udevadm control --reload-rules
-udevadm trigger
-
-# Install additional dependencies for USB access
-DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    libusb-1.0-0 \
-    libhidapi-libusb0 \
-    libhidapi-hidraw0
-
-# Create symlinks for USB access
-ln -sf /usr/lib/x86_64-linux-gnu/libhidapi-libusb.so.0 /usr/lib/x86_64-linux-gnu/libhidapi-libusb.so 2>/dev/null || true
-ln -sf /usr/lib/x86_64-linux-gnu/libhidapi-hidraw.so.0 /usr/lib/x86_64-linux-gnu/libhidapi-hidraw.so 2>/dev/null || true
-
-# Fix any double-slash paths
-for file in /usr/bin/openrgb /usr/share/applications/org.openrgb.OpenRGB.desktop /usr/share/icons/hicolor/128x128/apps/org.openrgb.OpenRGB.png /usr/share/metainfo/org.openrgb.OpenRGB.metainfo.xml; do
-    if [ -e "/${file}" ]; then
-        mv "/${file}" "${file}"
+# Create config directories with proper permissions
+for dir in "/root/.config/OpenRGB" "/home/$SUDO_USER/.config/OpenRGB"; do
+    mkdir -p "$dir"
+    if [[ "$dir" == /home/* ]]; then
+        chown -R "$SUDO_USER:$SUDO_USER" "$dir"
     fi
 done
 
-# Reload udev
-udevadm control --reload-rules
-udevadm trigger
-
-# Create desktop entry with correct path
-log "Creating desktop entry..."
-mkdir -p /usr/share/applications
-cat > /usr/share/applications/openrgb.desktop << EOF
-[Desktop Entry]
-Name=OpenRGB
-Comment=RGB Control Utility
-Exec=/usr/bin/openrgb
-Icon=utilities-terminal
-Terminal=false
-Type=Application
-Categories=Utility;
-EOF
-
-# Try to set colors now
-log "Attempting to set colors..."
-echo "Setting all devices to color #${TARGET_COLOR}..."
-
-# Stop any existing OpenRGB processes
-killall openrgb 2>/dev/null || true
-sleep 2
-
-# Start fresh OpenRGB server
-echo "Starting OpenRGB server..."
-openrgb --server &
-sleep 5
-
-# Detect devices
-echo "Detecting devices..."
-openrgb --list-devices
-sleep 2
-
-# Set all devices together with different modes
-echo "Setting all devices together..."
-
-# First, get a list of all devices
-devices=$(openrgb --list-devices | grep -n "^[0-9]" | cut -d: -f1)
-
-for device in $devices; do
-    echo "Setting device $device..."
-    
-    # Try to set the entire device
-    openrgb --device $device --mode direct --color ${TARGET_COLOR}
-    sleep 0.5
-    
-    # Set each zone individually
-    zones=$(openrgb --list-devices | grep -A1 "^$device:" | grep "Zones:" | cut -d: -f2- | tr "'" '\n' | grep -v "^[ ]*$" | grep -v "Zones")
-    for zone in $zones; do
-        echo "  Setting zone: $zone"
-        openrgb --device $device --zone "$zone" --color ${TARGET_COLOR}
-        sleep 0.2
-    done
-    
-    # Set each LED individually
-    leds=$(openrgb --list-devices | grep -A1 "^$device:" | grep "LEDs:" | cut -d: -f2- | tr "'" '\n' | grep -v "^[ ]*$" | grep -v "LEDs")
-    for led in $leds; do
-        echo "  Setting LED: $led"
-        openrgb --device $device --led "$led" --color ${TARGET_COLOR}
-        sleep 0.1
-    done
-    
-    # Try different modes to ensure the color sticks
-    for mode in "direct" "static" "breathing" "flash" "rainbow"; do
-        openrgb --device $device --mode $mode --color ${TARGET_COLOR}
-        sleep 0.5
-    done
-    
-    # Force back to direct mode
-    openrgb --device $device --mode direct --color ${TARGET_COLOR}
-done
-
-# Final pass - set everything at once
-echo "Final pass - setting all devices..."
-openrgb --mode direct --color ${TARGET_COLOR}
-sleep 1
-openrgb --mode static --color ${TARGET_COLOR}
-
-# Verify current status
-echo
-echo "Current OpenRGB device status:"
-openrgb --list-devices
-
-# Create a profile for the current settings
-echo "Creating default color profile..."
-mkdir -p /root/.config/OpenRGB/
+# Create a valid profile with proper header
 cat > /root/.config/OpenRGB/default.orp << EOF
 {
-    "devices": [
-        {
-            "name": "ENE DRAM",
-            "type": "DRAM",
-            "description": "ENE SMBus Device",
-            "version": "AUDA0-E6K5-0101",
-            "serial": "",
-            "location": "I2C: /dev/i2c-2, address 0x71",
-            "mode": "Direct",
-            "colors": ["${TARGET_COLOR}", "${TARGET_COLOR}", "${TARGET_COLOR}", "${TARGET_COLOR}", "${TARGET_COLOR}", "${TARGET_COLOR}", "${TARGET_COLOR}", "${TARGET_COLOR}"]
-        },
-        {
-            "name": "ENE DRAM",
-            "type": "DRAM",
-            "description": "ENE SMBus Device",
-            "version": "AUDA0-E6K5-0101",
-            "serial": "",
-            "location": "I2C: /dev/i2c-2, address 0x73",
-            "mode": "Direct",
-            "colors": ["${TARGET_COLOR}", "${TARGET_COLOR}", "${TARGET_COLOR}", "${TARGET_COLOR}", "${TARGET_COLOR}", "${TARGET_COLOR}", "${TARGET_COLOR}", "${TARGET_COLOR}"]
-        },
+    "header": {
+        "version": 3,
+        "description": "Default Profile",
+        "author": "OpenRGB"
+    },
+    "controllers": [
         {
             "name": "ASRock B650M PG Lightning WiFi",
             "type": "Motherboard",
@@ -350,27 +152,27 @@ cat > /root/.config/OpenRGB/default.orp << EOF
             "version": "",
             "serial": "",
             "location": "HID: /dev/hidraw0",
-            "mode": "Direct",
-            "colors": ["${TARGET_COLOR}"]
-        },
-        {
-            "name": "AMD Wraith Prism",
-            "type": "Cooler",
-            "mode": "Direct",
-            "colors": ["${TARGET_COLOR}"]
-        },
-        {
-            "name": "XPG SPECTRIX",
-            "type": "Storage",
-            "mode": "Direct",
+            "vendor": "ASRock",
+            "active_mode": "Static",
+            "modes": [
+                {
+                    "name": "Static",
+                    "value": 1,
+                    "flags": 0,
+                    "colors": ["${TARGET_COLOR}"]
+                }
+            ],
             "colors": ["${TARGET_COLOR}"]
         }
     ]
 }
 EOF
 
-# Update systemd service to load profile and ensure USB device access
-log "Updating systemd service..."
+# Copy profile to user directory and set permissions
+cp -f /root/.config/OpenRGB/default.orp "/home/$SUDO_USER/.config/OpenRGB/"
+chown -R "$SUDO_USER:$SUDO_USER" "/home/$SUDO_USER/.config/OpenRGB"
+
+# Update systemd service
 cat > /etc/systemd/system/openrgb.service << EOF
 [Unit]
 Description=OpenRGB LED Control
@@ -379,22 +181,14 @@ Wants=modprobe@i2c_dev.service modprobe@i2c_piix4.service modprobe@i2c_i801.serv
 
 [Service]
 Type=simple
-# Load required modules with options
-ExecStartPre=/sbin/modprobe i2c_dev
-ExecStartPre=/sbin/modprobe i2c_piix4 force=1
-ExecStartPre=/sbin/modprobe i2c_i801 force_addr=1
-# Set permissions for all possible devices
-ExecStartPre=/bin/sh -c 'for i in \$(seq 0 9); do if [ -e "/dev/i2c-\$i" ]; then chmod 666 "/dev/i2c-\$i"; fi; done'
-ExecStartPre=/bin/sh -c 'for dev in /dev/hidraw*; do chmod 666 "\$dev"; done'
-# Start OpenRGB and load profile
+ExecStartPre=/bin/sleep 2
+ExecStartPre=/usr/bin/killall openrgb || true
 ExecStart=/usr/bin/openrgb --server --profile default
 Restart=on-failure
 RestartSec=3
 User=root
 Environment=DISPLAY=:0
-# Add proper device permissions
 SupplementaryGroups=i2c input video plugdev
-# Add proper capabilities
 AmbientCapabilities=CAP_SYS_RAWIO CAP_SYS_ADMIN CAP_IPC_LOCK
 NoNewPrivileges=true
 
@@ -413,7 +207,7 @@ sleep 5
 # Show current status
 echo
 echo "Current OpenRGB device status:"
-openrgb --list-devices
+openrgb --nodetect --list-devices
 
 echo
 echo "A reboot is REQUIRED to properly initialize all hardware:"
