@@ -4,7 +4,22 @@
 # Configures SSH access and hardware optimizations
 # Requires reboot for full optimization activation
 
+# Exit on any error
 set -e
+
+# Trap errors and print the line number where they occurred
+trap 'echo "Error on line $LINENO"' ERR
+
+# Ensure script is run with sudo
+if [[ $EUID -eq 0 ]]; then
+    echo "This script should not be run as root. Please run with sudo instead."
+    exit 1
+fi
+
+if [[ ! -n "$SUDO_USER" ]]; then
+    echo "This script must be run with sudo"
+    exit 1
+fi
 
 # ================================
 # CONFIGURATION VARIABLES
@@ -1140,6 +1155,18 @@ prompt_reboot() {
 # ================================
 
 main() {
+    # Print welcome message
+    section "Starting Module 1: System Preparation"
+    info "This module will:"
+    info "• Update system packages"
+    info "• Install essential tools"
+    info "• Configure SSH access"
+    info "• Set up firewall"
+    info "• Apply system optimizations"
+    info "• Configure memory settings"
+    info "• Apply CPU optimizations"
+    
+    # Execute all functions in sequence
     verify_root_access
     detect_network_interface
     update_system_packages
@@ -1150,6 +1177,7 @@ main() {
     create_system_utilities
     configure_huge_pages
     apply_cpu_optimizations
+    setup_thermal_monitoring
     
     # Final verification before reboot
     verify_headless_readiness
