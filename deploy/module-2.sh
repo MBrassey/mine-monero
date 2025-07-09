@@ -145,29 +145,81 @@ rm -rf /home/$SUDO_USER/.config/OpenRGB
 mkdir -p /root/.config/OpenRGB
 mkdir -p /home/$SUDO_USER/.config/OpenRGB
 
-# Create a basic working profile
+# Set colors directly first
+log "Setting colors for all devices..."
+
+# Set CPU Cooler - Device 0 (each zone separately)
+log "Setting CPU Cooler..."
+openrgb --device 0 --zone 0 --color ${TARGET_COLOR} # Logo
+openrgb --device 0 --zone 1 --color ${TARGET_COLOR} # Fan
+openrgb --device 0 --zone 2 --color ${TARGET_COLOR} # Ring
+sleep 1
+
+# Set Motherboard - Device 1 (each zone separately)
+log "Setting Motherboard..."
+openrgb --device 1 --mode direct --color ${TARGET_COLOR}
+for zone in {0..4}; do
+    openrgb --device 1 --zone $zone --color ${TARGET_COLOR}
+    sleep 0.1
+done
+
+# Create a proper profile that includes all devices and zones
 cat > /root/.config/OpenRGB/default.orp << EOF
 {
     "version": 3,
     "controllers": [
         {
+            "name": "AMD Wraith Prism",
+            "type": "Cooler",
+            "description": "AMD Wraith Prism Device",
+            "version": "V1.01.00",
+            "location": "HID: /dev/hidraw2",
+            "active_mode": "Direct",
+            "colors": ["${TARGET_COLOR}"],
+            "zones": [
+                {
+                    "name": "Logo",
+                    "colors": ["${TARGET_COLOR}"]
+                },
+                {
+                    "name": "Fan",
+                    "colors": ["${TARGET_COLOR}"]
+                },
+                {
+                    "name": "Ring",
+                    "colors": ["${TARGET_COLOR}"]
+                }
+            ]
+        },
+        {
             "name": "ASRock B650M PG Lightning WiFi",
             "type": "Motherboard",
             "description": "ASRock Polychrome USB Device",
-            "version": "",
-            "serial": "",
             "location": "HID: /dev/hidraw0",
-            "vendor": "ASRock",
             "active_mode": "Direct",
-            "modes": [
+            "colors": ["${TARGET_COLOR}"],
+            "zones": [
                 {
-                    "name": "Direct",
-                    "value": 1,
-                    "flags": 0,
+                    "name": "RGB LED 1 Header",
+                    "colors": ["${TARGET_COLOR}"]
+                },
+                {
+                    "name": "Addressable Header 1",
+                    "colors": ["${TARGET_COLOR}"]
+                },
+                {
+                    "name": "Addressable Header 2",
+                    "colors": ["${TARGET_COLOR}"]
+                },
+                {
+                    "name": "PCB",
+                    "colors": ["${TARGET_COLOR}"]
+                },
+                {
+                    "name": "Addressable Header 3/Audio",
                     "colors": ["${TARGET_COLOR}"]
                 }
-            ],
-            "colors": ["${TARGET_COLOR}"]
+            ]
         }
     ]
 }
@@ -177,19 +229,26 @@ EOF
 cp -f /root/.config/OpenRGB/default.orp "/home/$SUDO_USER/.config/OpenRGB/"
 chown -R "$SUDO_USER:$SUDO_USER" "/home/$SUDO_USER/.config/OpenRGB"
 
-# Create simple systemd service
+# Update systemd service to set colors on startup
 cat > /etc/systemd/system/openrgb.service << EOF
 [Unit]
 Description=OpenRGB LED Control
-After=multi-user.target
+After=multi-user.target systemd-modules-load.service
+StartLimitIntervalSec=0
 
 [Service]
-Type=simple
+Type=oneshot
+RemainAfterExit=yes
 ExecStartPre=/bin/sleep 5
-ExecStart=/usr/bin/openrgb --server
-Restart=on-failure
-RestartSec=3
-User=root
+ExecStart=/bin/bash -c '\
+    /usr/bin/openrgb --device 0 --zone 0 --color ${TARGET_COLOR} && \
+    /usr/bin/openrgb --device 0 --zone 1 --color ${TARGET_COLOR} && \
+    /usr/bin/openrgb --device 0 --zone 2 --color ${TARGET_COLOR} && \
+    /usr/bin/openrgb --device 1 --mode direct --color ${TARGET_COLOR} && \
+    for zone in {0..4}; do \
+        /usr/bin/openrgb --device 1 --zone $zone --color ${TARGET_COLOR}; \
+        sleep 0.1; \
+    done'
 
 [Install]
 WantedBy=multi-user.target
@@ -197,16 +256,10 @@ EOF
 
 # Reload systemd
 systemctl daemon-reload
-
-# Try setting colors directly first
-log "Testing direct color setting..."
-openrgb --device 0 --mode direct --color ${TARGET_COLOR}
-sleep 2
-
-# Start the service
-log "Starting OpenRGB service..."
 systemctl enable openrgb
 systemctl restart openrgb
+
+# Wait for service to initialize
 sleep 5
 
 # Verify status
