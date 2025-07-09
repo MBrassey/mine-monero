@@ -27,39 +27,38 @@ if ! command -v openrgb &> /dev/null; then
     cp 60-openrgb.rules /etc/udev/rules.d/
     udevadm control --reload-rules
     udevadm trigger
-    
-    # Verify installation
-    if ! command -v openrgb &> /dev/null; then
-        echo "Failed to install OpenRGB"
-        exit 1
-    fi
 fi
 
-# Load i2c modules and setup SMBus
-echo "Setting up hardware access..."
+# Load ALL necessary modules for device detection
+echo "Loading required modules..."
 modprobe i2c_dev
 modprobe i2c_piix4
+modprobe i2c_smbus
+modprobe raydium_i2c
+modprobe nvme
+modprobe msr
+modprobe k10temp
 
-# Set aggressive permissions
+# Set permissions for all possible devices
 echo "Setting device permissions..."
-chown root:root /dev/i2c-* /dev/hidraw* 2>/dev/null || true
-chmod 666 /dev/i2c-* /dev/hidraw* 2>/dev/null || true
-
-# Add current user to required groups
-usermod -a -G i2c,plugdev $SUDO_USER 2>/dev/null || true
+chmod 666 /dev/i2c-* 2>/dev/null || true
+chmod 666 /dev/hidraw* 2>/dev/null || true
+chmod 666 /dev/nvme* 2>/dev/null || true
+chmod 666 /dev/port 2>/dev/null || true
 
 # Kill any existing OpenRGB processes
 killall openrgb 2>/dev/null || true
 sleep 2
 
-# First detect devices
-echo "Detecting RGB devices..."
+# First check what devices are detected
+echo "Detected devices:"
 openrgb --list-devices
 
-# Now set everything to red
-echo "Setting all RGB devices to red..."
-for i in {0..10}; do
-    openrgb --device $i --mode direct --color FF0000 2>/dev/null || true
-done
+echo
+echo "Setting all devices to red..."
+# Try both methods to ensure all devices are set
+openrgb --color FF0000
+sleep 1
+openrgb --mode direct --color FF0000
 
 echo "Done."
