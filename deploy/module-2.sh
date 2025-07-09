@@ -29,28 +29,49 @@ if ! command -v openrgb &> /dev/null; then
     udevadm trigger
 fi
 
-# Add kernel parameter for AMD systems
-if ! grep -q "acpi_enforce_resources=lax" /etc/default/grub; then
-    sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT="/GRUB_CMDLINE_LINUX_DEFAULT="acpi_enforce_resources=lax /' /etc/default/grub
+# Add kernel parameters for AMD B650M
+if ! grep -q "acpi_enforce_resources=lax amd_iommu=off" /etc/default/grub; then
+    sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT="/GRUB_CMDLINE_LINUX_DEFAULT="acpi_enforce_resources=lax amd_iommu=off /' /etc/default/grub
     update-grub
 fi
 
-# Load required modules
+# Load required modules in correct order
 echo "Loading required modules..."
 modprobe i2c_dev
+sleep 1
 modprobe i2c_piix4
+sleep 1
+
+# Enable i2c in modules
+if ! grep -q "^i2c_dev" /etc/modules; then
+    echo "i2c_dev" >> /etc/modules
+    echo "i2c_piix4" >> /etc/modules
+fi
 
 # Set permissions
 echo "Setting device permissions..."
 chmod 666 /dev/i2c-* 2>/dev/null || true
 chmod 666 /dev/hidraw* 2>/dev/null || true
 
+# Create i2c group and add user
+getent group i2c >/dev/null || groupadd i2c
+usermod -a -G i2c $SUDO_USER
+
 # Kill any existing OpenRGB processes
 killall openrgb 2>/dev/null || true
 sleep 2
 
-# Set everything to red
+# Check available i2c buses
+echo "Available I2C buses:"
+i2cdetect -l
+
+# Try to set colors with different methods
 echo "Setting all devices to red..."
+openrgb -d 0 -m direct -c FF0000
+openrgb -d 1 -m direct -c FF0000
+openrgb -d 2 -m direct -c FF0000
+openrgb -d 3 -m direct -c FF0000
+sleep 1
 openrgb --mode direct --color FF0000
 
 echo "Done. A reboot is required for kernel parameter changes to take effect."
