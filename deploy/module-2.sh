@@ -47,12 +47,6 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y \
     cmake \
     qttools5-dev-tools
 
-# Load required kernel modules
-log "Loading kernel modules..."
-modprobe i2c-dev
-modprobe i2c-piix4
-modprobe i2c-i801
-
 # Build and install OpenRGB from source
 log "Building OpenRGB from source..."
 cd /tmp
@@ -90,6 +84,39 @@ log "Setting up I2C/SMBus access..."
 if ! grep -q "^i2c-dev" /etc/modules; then
     echo "i2c-dev" >> /etc/modules
 fi
+
+# Create i2c group if it doesn't exist
+if ! getent group i2c >/dev/null; then
+    groupadd i2c
+fi
+
+# Add current user to i2c group
+if [ -n "$SUDO_USER" ]; then
+    usermod -a -G i2c "$SUDO_USER"
+fi
+
+# Load all potentially needed kernel modules
+log "Loading kernel modules..."
+modules=(
+    "i2c-dev"
+    "i2c-piix4"
+    "i2c-i801"
+    "i2c-nct6775"  # Common for motherboard sensors
+    "i2c-acpi"     # ACPI I2C
+    "i2c_hid"      # HID devices over I2C
+    "ch341"        # Common USB-to-I2C adapter
+)
+
+for module in "${modules[@]}"; do
+    modprobe "$module" 2>/dev/null || true
+    if ! grep -q "^$module" /etc/modules; then
+        echo "$module" >> /etc/modules
+    fi
+done
+
+# Update module dependencies
+log "Updating module dependencies..."
+depmod -a
 
 # Create udev rules for RGB devices
 log "Creating udev rules..."
@@ -195,3 +222,19 @@ read -r response
 if [[ "$response" =~ ^[Yy]$ ]]; then
     reboot
 fi
+
+log "A reboot is REQUIRED for the following reasons:"
+echo "1. Enable newly installed kernel modules"
+echo "2. Apply SMBus/I2C permissions"
+echo "3. Initialize hardware drivers"
+echo "4. Apply udev rules for USB device permissions"
+echo
+echo "Would you like to reboot now? [y/N] "
+read -r response
+if [[ "$response" =~ ^[Yy]$ ]]; then
+    reboot
+fi
+
+echo
+echo "If you choose not to reboot now, please reboot manually before using OpenRGB."
+echo "After reboot, RGB settings will be automatically applied via the systemd service."
