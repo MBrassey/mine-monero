@@ -111,7 +111,8 @@ done
 # Update udev rules with correct paths
 log "Updating udev rules..."
 mkdir -p /usr/lib/udev/rules.d/
-cp 60-openrgb.rules /usr/lib/udev/rules.d/
+cp 60-openrgb.rules /usr/lib/udev/rules.d/60-openrgb.rules
+chmod 644 /usr/lib/udev/rules.d/60-openrgb.rules
 udevadm control --reload-rules
 udevadm trigger
 
@@ -176,12 +177,29 @@ fi
 echo "Checking USB devices..."
 lsusb
 
+# Try to set colors now (might work for some devices before reboot)
+echo
+echo "Attempting to set colors (some devices might work before reboot)..."
+openrgb --noautoconnect --brightness 100 --color ${TARGET_COLOR}
+sleep 2
+
+# Show current device status
+echo
+echo "Current OpenRGB device status:"
+openrgb --list-devices || true
+
 echo
 echo "A reboot is REQUIRED to properly initialize all hardware:"
 echo "1. Load all kernel modules"
 echo "2. Initialize SMBus and I2C controllers"
 echo "3. Apply all user permissions"
 echo "4. Initialize USB device detection"
+echo
+echo "After reboot:"
+echo "1. The systemd service will automatically set colors to #${TARGET_COLOR}"
+echo "2. You can verify by running: openrgb --list-devices"
+echo "3. To change colors manually: openrgb --color RRGGBB"
+echo "4. To use the GUI: just run 'openrgb'"
 echo
 echo "Would you like to reboot now? [y/N] "
 read -r response
@@ -191,4 +209,4 @@ fi
 
 echo
 echo "If you choose not to reboot now, please reboot manually before using OpenRGB."
-echo "After reboot, run 'openrgb --list-devices' to verify device detection."
+echo "After reboot, the systemd service will automatically set your devices to #${TARGET_COLOR}"
