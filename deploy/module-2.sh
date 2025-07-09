@@ -148,19 +148,44 @@ mkdir -p /home/$SUDO_USER/.config/OpenRGB
 # Set colors directly first
 log "Setting colors for all devices..."
 
-# Set CPU Cooler - Device 0 (each zone separately)
+# Start OpenRGB server first
+openrgb --server &
+sleep 3
+
+# Set CPU Cooler - Device 0 (each LED and zone)
 log "Setting CPU Cooler..."
+# Set overall mode first
+openrgb --device 0 --mode direct --color ${TARGET_COLOR}
+sleep 1
+
+# Set each zone
 openrgb --device 0 --zone 0 --color ${TARGET_COLOR} # Logo
 openrgb --device 0 --zone 1 --color ${TARGET_COLOR} # Fan
 openrgb --device 0 --zone 2 --color ${TARGET_COLOR} # Ring
 sleep 1
 
-# Set Motherboard - Device 1 (each zone separately)
+# Set each individual LED
+for i in {0..15}; do
+    openrgb --device 0 --led $i --color ${TARGET_COLOR}
+    sleep 0.1
+done
+
+# Set Motherboard - Device 1
 log "Setting Motherboard..."
+# Set overall mode first
 openrgb --device 1 --mode direct --color ${TARGET_COLOR}
+sleep 1
+
+# Set each zone
 for zone in {0..4}; do
     openrgb --device 1 --zone $zone --color ${TARGET_COLOR}
     sleep 0.1
+done
+
+# Set each LED individually
+for led in {0..244}; do
+    openrgb --device 1 --led $led --color ${TARGET_COLOR}
+    sleep 0.05
 done
 
 # Create a proper profile that includes all devices and zones
@@ -229,7 +254,7 @@ EOF
 cp -f /root/.config/OpenRGB/default.orp "/home/$SUDO_USER/.config/OpenRGB/"
 chown -R "$SUDO_USER:$SUDO_USER" "/home/$SUDO_USER/.config/OpenRGB"
 
-# Update systemd service to set colors on startup
+# Update systemd service to be more thorough
 cat > /etc/systemd/system/openrgb.service << EOF
 [Unit]
 Description=OpenRGB LED Control
@@ -240,14 +265,30 @@ StartLimitIntervalSec=0
 Type=oneshot
 RemainAfterExit=yes
 ExecStartPre=/bin/sleep 5
+
+# Start server
 ExecStart=/bin/bash -c '\
+    /usr/bin/openrgb --server & \
+    sleep 3 && \
+    # Set CPU Cooler \
+    /usr/bin/openrgb --device 0 --mode direct --color ${TARGET_COLOR} && \
+    sleep 1 && \
     /usr/bin/openrgb --device 0 --zone 0 --color ${TARGET_COLOR} && \
     /usr/bin/openrgb --device 0 --zone 1 --color ${TARGET_COLOR} && \
     /usr/bin/openrgb --device 0 --zone 2 --color ${TARGET_COLOR} && \
+    for i in {0..15}; do \
+        /usr/bin/openrgb --device 0 --led $i --color ${TARGET_COLOR}; \
+        sleep 0.1; \
+    done && \
+    # Set Motherboard \
     /usr/bin/openrgb --device 1 --mode direct --color ${TARGET_COLOR} && \
     for zone in {0..4}; do \
         /usr/bin/openrgb --device 1 --zone $zone --color ${TARGET_COLOR}; \
         sleep 0.1; \
+    done && \
+    for led in {0..244}; do \
+        /usr/bin/openrgb --device 1 --led $led --color ${TARGET_COLOR}; \
+        sleep 0.05; \
     done'
 
 [Install]
