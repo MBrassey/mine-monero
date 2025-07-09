@@ -176,7 +176,61 @@ The mining setup uses the following network configuration:
    ```
    This will show all active firewall rules.
 
-**Step 9: Update Configuration Files**
+### Phase 4: Transitioning to Headless Operation
+
+**Step 9: Verify Remote Access**
+
+After running module-1.sh, it's critical to verify SSH access before proceeding:
+
+1. Open a new terminal on your workstation
+2. Test SSH connection:
+   ```bash
+   ssh ubuntu@<your-mining-rig-ip>
+   ```
+3. Verify you can successfully log in
+4. Run a test command:
+   ```bash
+   uptime
+   ```
+5. Exit the SSH session:
+   ```bash
+   exit
+   ```
+
+**Step 10: Prepare for Headless Operation**
+
+Once SSH access is confirmed:
+
+1. Shut down the mining rig:
+   ```bash
+   sudo halt
+   ```
+2. Wait for complete shutdown (all lights off)
+3. **IMPORTANT:** Remove the video card
+4. Power on the mining rig
+5. Wait 2-3 minutes for full boot
+6. Connect via SSH from your workstation:
+   ```bash
+   ssh ubuntu@<your-mining-rig-ip>
+   ```
+
+**Step 11: Verify Headless Operation**
+
+After connecting via SSH to the headless system:
+1. Verify system status:
+   ```bash
+   uptime
+   ip addr show
+   sudo ufw status numbered
+   ```
+2. If all checks pass, proceed with module-2 installation
+
+**CRITICAL:** Do not proceed with module-2 until:
+- SSH access is verified working
+- Video card has been removed
+- Headless operation is confirmed working
+
+**Step 12: Update Configuration Files**
 
 Before running the modules, update the following configuration files in the `deploy` directory:
 

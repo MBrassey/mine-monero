@@ -486,107 +486,171 @@ verify_ssh_config() {
 configure_firewall() {
     section "Configuring Firewall"
     
-    info "Ensuring UFW is installed..."
+    info "Step 1/8: Checking UFW installation..."
     if ! command -v ufw >/dev/null 2>&1; then
-        info "Installing UFW..."
-        sudo apt install -y ufw || {
-            error "Failed to install UFW"
-            exit 1
-        }
-    fi
-    
-    info "Resetting UFW to default state..."
-    # Reset UFW to default state
-    sudo ufw --force reset
-    
-    info "Configuring UFW default policies..."
-    # Set default policies
-    sudo ufw default deny incoming
-    sudo ufw default allow outgoing
-    
-    info "Allowing SSH access..."
-    sudo ufw allow ssh comment 'SSH Access'
-    
-    info "Configuring mining and node ports..."
-    # P2Pool ports
-    sudo ufw allow 3333/tcp comment 'P2Pool Stratum'
-    sudo ufw allow 37889/tcp comment 'P2Pool P2P'
-    sudo ufw allow 37888/tcp comment 'P2Pool Mini P2P'
-    
-    # Monero node ports
-    sudo ufw allow 18080/tcp comment 'Monero P2P'
-    sudo ufw allow 18081/tcp comment 'Monero RPC'
-    
-    # XMRig API and monitoring ports
-    sudo ufw allow 18088/tcp comment 'XMRig API'
-    
-    info "Configuring metrics and monitoring ports..."
-    # Prometheus exporters
-    sudo ufw allow 9100/tcp comment 'XMRig Exporter'
-    sudo ufw allow 9101/tcp comment 'Node Exporter'
-    
-    info "Configuring mining network access..."
-    # Allow access from mining network
-    sudo ufw allow from 192.168.1.0/24 comment 'Mining Network'
-    
-    info "Enabling UFW..."
-    # Disable and re-enable UFW to ensure clean state
-    sudo ufw disable || true
-    sleep 2
-    sudo ufw --force enable
-    sleep 2
-    
-    # Reload UFW to ensure all rules are applied
-    info "Reloading UFW rules..."
-    sudo ufw reload
-    
-    # Force UFW to start on boot
-    sudo systemctl enable ufw
-    sudo systemctl start ufw
-    
-    # Double check UFW is running
-    if ! sudo ufw status | grep -q "Status: active"; then
-        error "Failed to enable UFW. Trying alternative method..."
-        sudo systemctl restart ufw
-        sleep 2
-        if ! sudo ufw status | grep -q "Status: active"; then
-            error "UFW failed to start after multiple attempts"
+        warning "UFW not found - installing now..."
+        if ! sudo apt install -y ufw; then
+            error "Failed to install UFW package"
+            error "Command failed: sudo apt install -y ufw"
             exit 1
         fi
+        success "UFW installed successfully"
+    else
+        success "UFW is already installed"
     fi
     
-    # Verify firewall configuration
+    info "Step 2/8: Ensuring UFW service is enabled..."
+    if ! systemctl is-enabled --quiet ufw; then
+        info "  • Enabling UFW service..."
+        if ! sudo systemctl enable ufw; then
+            error "Failed to enable UFW service"
+            exit 1
+        fi
+        success "UFW service enabled"
+    else
+        success "UFW service already enabled"
+    fi
+    
+    info "Step 3/8: Starting UFW service..."
+    if ! systemctl is-active --quiet ufw; then
+        info "  • Starting UFW service..."
+        if ! sudo systemctl start ufw; then
+            error "Failed to start UFW service"
+            exit 1
+        fi
+        success "UFW service started"
+    else
+        success "UFW service already running"
+    fi
+    
+    info "Step 4/8: Resetting UFW to clean state..."
+    if sudo ufw --force reset; then
+        success "UFW reset successfully"
+    else
+        error "Failed to reset UFW"
+        error "Command failed: sudo ufw --force reset"
+        exit 1
+    fi
+    
+    info "Step 5/8: Setting default policies..."
+    info "  • Setting default deny incoming..."
+    sudo ufw default deny incoming
+    info "  • Setting default allow outgoing..."
+    sudo ufw default allow outgoing
+    success "Default policies configured"
+    
+    info "Step 6/8: Configuring firewall rules..."
+    
+    # Array of rules to add
+    declare -A firewall_rules=(
+        ["SSH Access"]="allow ssh"
+        ["P2Pool Stratum"]="allow 3333/tcp"
+        ["P2Pool P2P"]="allow 37889/tcp"
+        ["P2Pool Mini P2P"]="allow 37888/tcp"
+        ["Monero P2P"]="allow 18080/tcp"
+        ["Monero RPC"]="allow 18081/tcp"
+        ["XMRig API"]="allow 18088/tcp"
+        ["XMRig Exporter"]="allow 9100/tcp"
+        ["Node Exporter"]="allow 9101/tcp"
+        ["Mining Network"]="allow from 192.168.1.0/24"
+    )
+    
+    # Add each rule and log the result
+    for desc in "${!firewall_rules[@]}"; do
+        rule="${firewall_rules[$desc]}"
+        info "  • Adding rule: $desc"
+        if sudo ufw $rule comment "$desc"; then
+            success "    ✓ Rule added: $desc"
+        else
+            error "    ✗ Failed to add rule: $desc"
+            error "    Command failed: sudo ufw $rule"
+            exit 1
+        fi
+    done
+    
+    info "Step 7/8: Enabling UFW..."
+    if ! sudo ufw --force enable; then
+        error "Failed to enable UFW"
+        error "Command failed: sudo ufw --force enable"
+        exit 1
+    fi
+    success "UFW enabled successfully"
+    
+    info "Step 8/8: Verifying UFW status..."
+    # Try multiple times to verify UFW is active
+    local max_attempts=3
+    local attempt=1
+    local ufw_active=false
+    
+    while [[ $attempt -le $max_attempts ]]; do
+        if sudo ufw status | grep -q "Status: active"; then
+            ufw_active=true
+            break
+        fi
+        info "  • Attempt $attempt/$max_attempts: UFW not active yet, waiting..."
+        sudo systemctl restart ufw
+        sleep 5
+        ((attempt++))
+    done
+    
+    if ! $ufw_active; then
+        error "UFW failed to start after multiple attempts"
+        error "Current UFW status:"
+        sudo ufw status verbose
+        error "Current UFW service status:"
+        sudo systemctl status ufw
+        exit 1
+    fi
+    
+    success "Firewall enabled and configured successfully"
+    info "Current UFW status:"
+    sudo ufw status numbered
+    
+    # Verify final configuration
     verify_firewall_config
 }
 
 verify_firewall_config() {
-    info "Verifying firewall configuration..."
+    section "Verifying Firewall Configuration"
     local config_errors=0
     
+    info "Running comprehensive firewall checks..."
+    
+    info "1. Basic UFW checks..."
     # Check if UFW is installed
     if ! command -v ufw >/dev/null 2>&1; then
-        error "UFW is not installed"
+        error "✗ UFW is not installed"
         ((config_errors++))
         return 1
+    else
+        success "✓ UFW is installed"
     fi
     
-    # Check if UFW service is enabled and running
-    if ! systemctl is-enabled --quiet ufw; then
-        error "UFW service is not enabled"
+    # Check if UFW service is enabled
+    if systemctl is-enabled --quiet ufw; then
+        success "✓ UFW service is enabled"
+    else
+        error "✗ UFW service is not enabled"
         ((config_errors++))
     fi
     
-    if ! systemctl is-active --quiet ufw; then
-        error "UFW service is not running"
+    # Check if UFW service is running
+    if systemctl is-active --quiet ufw; then
+        success "✓ UFW service is running"
+    else
+        error "✗ UFW service is not running"
         ((config_errors++))
     fi
     
     # Check if UFW is active
-    if ! sudo ufw status | grep -q "Status: active"; then
-        error "UFW is not active"
+    if sudo ufw status | grep -q "Status: active"; then
+        success "✓ UFW is active"
+    else
+        error "✗ UFW is not active"
         ((config_errors++))
     fi
     
+    info "2. Checking required ports..."
     # Define required ports and their descriptions
     declare -A required_ports=(
         ["22"]="SSH"
@@ -601,65 +665,42 @@ verify_firewall_config() {
     )
     
     # Check each required port
-    local ufw_status=$(sudo ufw status numbered | grep -v "Status: active")
+    local ufw_status=$(sudo ufw status numbered)
     for port in "${!required_ports[@]}"; do
-        if ! echo "$ufw_status" | grep -q "$port/tcp"; then
-            error "Port $port (${required_ports[$port]}) is not open"
+        if echo "$ufw_status" | grep -q "$port/tcp"; then
+            success "✓ Port $port (${required_ports[$port]}) is open"
+        else
+            error "✗ Port $port (${required_ports[$port]}) is not open"
             ((config_errors++))
         fi
     done
     
+    info "3. Checking policies..."
     # Verify default policies
-    if ! sudo ufw status verbose | grep -q "Default: deny (incoming)"; then
-        error "Default incoming policy is not set to deny"
-        ((config_errors++))
-    fi
-    
-    if ! sudo ufw status verbose | grep -q "Default: allow (outgoing)"; then
-        error "Default outgoing policy is not set to allow"
-        ((config_errors++))
-    fi
-    
-    # Verify mining network access
-    if ! echo "$ufw_status" | grep -q "192.168.1.0/24"; then
-        error "Mining network (192.168.1.0/24) access is not configured"
-        ((config_errors++))
-    fi
-    
-    # Display current firewall status
-    info "Current firewall rules:"
-    sudo ufw status numbered
-    
-    if [[ $config_errors -eq 0 ]]; then
-        success "Firewall configuration verified successfully"
-        info "All required ports are open and properly configured"
-        
-        # Display port summary
-        info "=== Open Ports Summary ==="
-        info "Mining Ports:"
-        info "• P2Pool Stratum: 3333/tcp"
-        info "• P2Pool P2P: 37889/tcp"
-        info "• P2Pool Mini P2P: 37888/tcp"
-        info "• Monero P2P: 18080/tcp"
-        info "• Monero RPC: 18081/tcp"
-        info "• XMRig API: 18088/tcp"
-        info ""
-        info "Monitoring Ports:"
-        info "• XMRig Exporter: 9100/tcp"
-        info "• Node Exporter: 9101/tcp"
-        info ""
-        info "Access Ports:"
-        info "• SSH: 22/tcp"
-        info "• Mining Network: 192.168.1.0/24 (all ports)"
-        info "=========================="
+    if sudo ufw status verbose | grep -q "Default: deny (incoming)"; then
+        success "✓ Default incoming policy is set to deny"
     else
-        error "Firewall configuration verification failed with $config_errors errors"
-        error "Please fix the firewall configuration before proceeding"
-        exit 1
+        error "✗ Default incoming policy is not set to deny"
+        ((config_errors++))
     fi
     
-    # Test outbound connectivity
-    info "Testing outbound connectivity..."
+    if sudo ufw status verbose | grep -q "Default: allow (outgoing)"; then
+        success "✓ Default outgoing policy is set to allow"
+    else
+        error "✗ Default outgoing policy is not set to allow"
+        ((config_errors++))
+    fi
+    
+    info "4. Checking mining network access..."
+    # Verify mining network access
+    if echo "$ufw_status" | grep -q "192.168.1.0/24"; then
+        success "✓ Mining network (192.168.1.0/24) access is configured"
+    else
+        error "✗ Mining network (192.168.1.0/24) access is not configured"
+        ((config_errors++))
+    fi
+    
+    info "5. Testing outbound connectivity..."
     local test_hosts=(
         "api.github.com"
         "pool.supportxmr.com"
@@ -668,17 +709,23 @@ verify_firewall_config() {
     )
     
     for host in "${test_hosts[@]}"; do
-        if ! nc -zw2 "$host" 443 2>/dev/null; then
-            error "Cannot connect to $host:443 - outbound connectivity issue"
+        if nc -zw2 "$host" 443 2>/dev/null; then
+            success "✓ Can connect to $host:443"
+        else
+            error "✗ Cannot connect to $host:443"
             ((config_errors++))
         fi
     done
     
+    # Final status report
     if [[ $config_errors -eq 0 ]]; then
-        success "Outbound connectivity verified successfully"
+        success "Firewall verification completed successfully"
+        info "=== Firewall Configuration Summary ==="
+        sudo ufw status numbered
+        info "===================================="
     else
-        error "Outbound connectivity verification failed"
-        error "Please check your network configuration"
+        error "Firewall verification failed with $config_errors errors"
+        error "Please review the errors above and fix the configuration"
         exit 1
     fi
 }
