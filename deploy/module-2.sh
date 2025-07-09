@@ -232,25 +232,59 @@ sleep 1
 
 # Try to detect and set AMD Wraith Prism
 echo "Setting CPU Cooler..."
-for i in {3..5}; do
-    if openrgb --device $i 2>/dev/null | grep -q "AMD"; then
+# Add specific udev rules for AMD Wraith Prism
+cat >> /etc/udev/rules.d/99-i2c.rules << EOF
+
+# AMD Wraith Prism (Updated rules)
+SUBSYSTEMS=="usb", ATTRS{idVendor}=="2516", ATTRS{idProduct}=="0051", GROUP="i2c", MODE="0666"
+SUBSYSTEMS=="usb", ATTRS{idVendor}=="2516", ATTRS{idProduct}=="0047", GROUP="i2c", MODE="0666"
+SUBSYSTEMS=="usb", ATTRS{idVendor}=="2516", ATTRS{idProduct}=="0020", GROUP="i2c", MODE="0666"
+EOF
+
+# Detect AMD Wraith Prism with multiple attempts
+for i in {0..10}; do
+    if openrgb --device $i 2>/dev/null | grep -qi "AMD.*Wraith.*Prism"; then
         echo "Found AMD Wraith Prism at device $i"
+        # Try multiple times with different modes
+        for mode in "direct" "static" "rainbow" "breathing"; do
+            openrgb --device $i --mode $mode --color ${TARGET_COLOR}
+            sleep 0.5
+        done
+        # Force direct mode last
         openrgb --device $i --mode direct --color ${TARGET_COLOR}
-        openrgb --device $i --mode static --color ${TARGET_COLOR}
         break
     fi
 done
 
 # Try to detect and set XPG SPECTRIX
 echo "Setting M.2 SSD..."
-for i in {3..5}; do
-    if openrgb --device $i 2>/dev/null | grep -q "XPG"; then
+# Add specific udev rules for XPG devices
+cat >> /etc/udev/rules.d/99-i2c.rules << EOF
+
+# XPG SPECTRIX Devices (Updated rules)
+SUBSYSTEMS=="usb", ATTRS{idVendor}=="125f", ATTRS{idProduct}=="a4a1", GROUP="i2c", MODE="0666"
+SUBSYSTEMS=="usb", ATTRS{idVendor}=="125f", ATTRS{idProduct}=="a4a2", GROUP="i2c", MODE="0666"
+SUBSYSTEMS=="usb", ATTRS{idVendor}=="125f", ATTRS{idProduct}=="*", GROUP="i2c", MODE="0666"
+EOF
+
+# Detect XPG SPECTRIX with multiple attempts
+for i in {0..10}; do
+    if openrgb --device $i 2>/dev/null | grep -qi "XPG.*SPECTRIX\|ADATA"; then
         echo "Found XPG SPECTRIX at device $i"
+        # Try multiple times with different modes
+        for mode in "direct" "static" "rainbow"; do
+            openrgb --device $i --mode $mode --color ${TARGET_COLOR}
+            sleep 0.5
+        done
+        # Force direct mode last
         openrgb --device $i --mode direct --color ${TARGET_COLOR}
-        openrgb --device $i --mode static --color ${TARGET_COLOR}
         break
     fi
 done
+
+# Reload udev rules immediately
+udevadm control --reload-rules
+udevadm trigger
 
 # Set all devices together with different modes
 echo "Setting all devices together..."
