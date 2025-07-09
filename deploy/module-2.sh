@@ -38,11 +38,9 @@ apt install -y \
     libusb-1.0-0-dev \
     libhidapi-dev \
     libmbedtls-dev \
-    qtbase6-dev \
-    qtbase6-dev-tools \
-    libqt6core6t64 \
-    libqt6gui6t64 \
-    libqt6widgets6t64
+    qt6-base-dev \
+    qt6-base-dev-tools \
+    qt6-base-private-dev
 
 # Load required kernel modules
 log "Loading kernel modules..."
@@ -89,7 +87,7 @@ cd OpenRGB
 
 # Build with Qt6 qmake
 log "Building OpenRGB..."
-qmake6 OpenRGB.pro
+/usr/lib/qt6/bin/qmake6 OpenRGB.pro
 make -j$(nproc)
 
 # Install OpenRGB
