@@ -29,23 +29,27 @@ if ! command -v openrgb &> /dev/null; then
     udevadm trigger
 fi
 
-# Enable i2c/SMBus access
-echo "Enabling SMBus access..."
+# Enable required modules for AMD system
+echo "Loading required modules..."
 modprobe i2c_dev
 modprobe i2c_piix4
 modprobe amdgpu
+modprobe i2c_smbus
+modprobe ee1004
+modprobe i2c_amd_mp2
 
-# Create i2c group if it doesn't exist
-getent group i2c >/dev/null || groupadd i2c
-
-# Add current user to i2c group
-usermod -a -G i2c $SUDO_USER
+# Add modules to load at boot
+echo "i2c_dev" > /etc/modules-load.d/i2c.conf
+echo "i2c_piix4" >> /etc/modules-load.d/i2c.conf
+echo "amdgpu" >> /etc/modules-load.d/i2c.conf
+echo "i2c_smbus" >> /etc/modules-load.d/i2c.conf
+echo "ee1004" >> /etc/modules-load.d/i2c.conf
+echo "i2c_amd_mp2" >> /etc/modules-load.d/i2c.conf
 
 # Set permissions
 echo "Setting device permissions..."
-chown root:i2c /dev/i2c-* 2>/dev/null || true
-chmod 660 /dev/i2c-* 2>/dev/null || true
-chmod 660 /dev/hidraw* 2>/dev/null || true
+chown root:root /dev/i2c-* /dev/hidraw* 2>/dev/null || true
+chmod 666 /dev/i2c-* /dev/hidraw* 2>/dev/null || true
 
 # Kill any existing OpenRGB processes
 killall openrgb 2>/dev/null || true
@@ -57,9 +61,9 @@ openrgb -l
 
 echo
 echo "Setting all devices to red..."
-openrgb -d 0 -m direct -c FF0000
-openrgb -d 1 -m direct -c FF0000
-openrgb -d 2 -m direct -c FF0000
-openrgb -d 3 -m direct -c FF0000
+# Try both methods to ensure all devices are set
+openrgb --mode direct --color FF0000
+sleep 1
+openrgb -d all -c FF0000
 
 echo "Done."
