@@ -1137,9 +1137,15 @@ configure_headless_boot() {
         sudo cp /etc/default/grub /etc/default/grub.backup
     fi
     
-    # Configure GRUB for headless operation with serial console
-    sudo sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="console=tty1 console=ttyS0,115200n8"/' /etc/default/grub
-    sudo sed -i 's/^GRUB_CMDLINE_LINUX=.*/GRUB_CMDLINE_LINUX="console=tty1 console=ttyS0,115200n8"/' /etc/default/grub
+    # Configure GRUB for true headless operation (no video card required)
+    sudo sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="nomodeset video=efifb:off console=tty1 console=ttyS0,115200n8"/' /etc/default/grub
+    sudo sed -i 's/^GRUB_CMDLINE_LINUX=.*/GRUB_CMDLINE_LINUX="nomodeset video=efifb:off console=tty1 console=ttyS0,115200n8"/' /etc/default/grub
+    
+    # Ensure GRUB doesn't wait for video
+    sudo sed -i 's/^GRUB_TERMINAL=.*/GRUB_TERMINAL=console/' /etc/default/grub
+    sudo sed -i 's/^#GRUB_TERMINAL=.*/GRUB_TERMINAL=console/' /etc/default/grub
+    
+    # Update GRUB
     sudo update-grub
     
     # Enable serial console
@@ -1148,8 +1154,11 @@ configure_headless_boot() {
     # Set multi-user target (non-graphical)
     sudo systemctl set-default multi-user.target
     
-    success "Headless operation configured"
-    info "System will boot in headless mode after reboot"
+    # Disable any services that might wait for display
+    sudo systemctl mask display-manager.service || true
+    
+    success "True headless operation configured (no video card required)"
+    info "System will boot without video card after reboot"
 }
 
 prepare_for_module2() {
