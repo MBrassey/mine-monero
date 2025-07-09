@@ -546,15 +546,43 @@ configure_firewall() {
     fi
     success "Default outgoing policy set to allow"
     
+    # Give UFW time to apply policies
+    info "  • Waiting for policies to take effect..."
+    sleep 2
+    
+    # Force UFW to reload policies
+    info "  • Reloading UFW..."
+    if ! sudo ufw reload; then
+        error "Failed to reload UFW"
+        exit 1
+    fi
+    sleep 2
+    
     # Verify default policies were set
-    if ! sudo ufw status verbose | grep -q "Default: deny (incoming)"; then
-        error "Failed to verify default incoming policy"
+    info "  • Verifying policies..."
+    local max_attempts=3
+    local attempt=1
+    local policies_verified=false
+    
+    while [[ $attempt -le $max_attempts ]]; do
+        local ufw_status=$(sudo ufw status verbose)
+        if echo "$ufw_status" | grep -q "Default: deny (incoming)" && \
+           echo "$ufw_status" | grep -q "Default: allow (outgoing)"; then
+            policies_verified=true
+            break
+        fi
+        info "    Attempt $attempt/$max_attempts: Waiting for policies to take effect..."
+        sleep 2
+        ((attempt++))
+    done
+    
+    if ! $policies_verified; then
+        error "Failed to verify UFW policies after $max_attempts attempts"
+        error "Current UFW status:"
+        sudo ufw status verbose
         exit 1
     fi
-    if ! sudo ufw status verbose | grep -q "Default: allow (outgoing)"; then
-        error "Failed to verify default outgoing policy"
-        exit 1
-    fi
+    
     success "Default policies configured and verified"
     
     info "Step 6/8: Configuring firewall rules..."
