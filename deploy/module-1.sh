@@ -1140,25 +1140,36 @@ configure_headless_boot() {
     fi
     
     # Add or update necessary GRUB parameters
-    local grub_params=(
-        'GRUB_CMDLINE_LINUX="nomodeset console=tty1 console=ttyS0,115200n8"'
-        'GRUB_TERMINAL="console serial"'
-        'GRUB_SERIAL_COMMAND="serial --speed=115200 --unit=0 --word=8 --parity=no --stop=1"'
-        'GRUB_TIMEOUT=1'
-        'GRUB_RECORDFAIL_TIMEOUT=1'
-    )
+    local grub_cmdline="nomodeset video=efifb:off consoleblank=0 console=tty1 console=ttyS0,115200n8 ignore_loglevel"
     
     info "Updating GRUB parameters..."
-    for param in "${grub_params[@]}"; do
-        local key="${param%%=*}"
-        if grep -q "^#*${key}=" /etc/default/grub; then
-            # Replace existing line (commented or not)
-            sudo sed -i "s|^#*${key}=.*|${param}|" /etc/default/grub
-        else
-            # Add new line if not exists
-            echo "${param}" | sudo tee -a /etc/default/grub >/dev/null
-        fi
-    done
+    
+    # Read current GRUB_CMDLINE_LINUX_DEFAULT
+    local current_cmdline=$(grep "^GRUB_CMDLINE_LINUX_DEFAULT=" /etc/default/grub | cut -d'"' -f2)
+    
+    # Merge existing parameters with our new ones, avoiding duplicates
+    local final_cmdline="$current_cmdline $grub_cmdline"
+    final_cmdline=$(echo "$final_cmdline" | tr ' ' '\n' | sort -u | tr '\n' ' ' | sed 's/ $//')
+    
+    # Update GRUB configuration
+    sudo sed -i.bak -E \
+        -e 's|^GRUB_CMDLINE_LINUX_DEFAULT=.*|GRUB_CMDLINE_LINUX_DEFAULT="'"$final_cmdline"'"|' \
+        -e 's|^GRUB_CMDLINE_LINUX=.*|GRUB_CMDLINE_LINUX="'"$grub_cmdline"'"|' \
+        -e 's|^#?GRUB_TERMINAL=.*|GRUB_TERMINAL=console|' \
+        -e 's|^#?GRUB_TIMEOUT=.*|GRUB_TIMEOUT=1|' \
+        -e 's|^#?GRUB_RECORDFAIL_TIMEOUT=.*|GRUB_RECORDFAIL_TIMEOUT=1|' \
+        /etc/default/grub
+    
+    # Add new parameters if they don't exist
+    if ! grep -q "^GRUB_TERMINAL=" /etc/default/grub; then
+        echo 'GRUB_TERMINAL=console' | sudo tee -a /etc/default/grub >/dev/null
+    fi
+    if ! grep -q "^GRUB_RECORDFAIL_TIMEOUT=" /etc/default/grub; then
+        echo 'GRUB_RECORDFAIL_TIMEOUT=1' | sudo tee -a /etc/default/grub >/dev/null
+    fi
+    
+    # Disable graphical terminal
+    sudo sed -i 's|^\s*if \[ "\$linux_gfx_mode" \]|if false \&\& [ "$linux_gfx_mode" ]|' /etc/grub.d/00_header
     
     # Update GRUB
     info "Applying GRUB configuration..."
@@ -1170,38 +1181,73 @@ configure_headless_boot() {
     
     # Configure systemd to not wait for a display manager
     info "Configuring systemd display settings..."
-    if [[ -d /etc/systemd/system ]]; then
-        # Create override directory if it doesn't exist
-        sudo mkdir -p /etc/systemd/system/display-manager.service.d/
-        
-        # Create override file
-        cat << 'EOF' | sudo tee /etc/systemd/system/display-manager.service.d/override.conf > /dev/null
-[Unit]
-Conflicts=
-After=
+    
+    # Create systemd override directory
+    sudo mkdir -p /etc/systemd/system.conf.d/
+    
+    # Create custom systemd configuration
+    cat << 'EOF' | sudo tee /etc/systemd/system.conf.d/99-headless.conf > /dev/null
+[Manager]
+DefaultDependencies=no
 RequiresMountsFor=
-
-[Service]
-ExecStart=
-ExecStart=/bin/true
-Type=oneshot
-RemainAfterExit=yes
 EOF
-        
-        success "Systemd display manager overrides configured"
+    
+    # Disable plymouth (boot splash)
+    if dpkg -l | grep -q plymouth; then
+        info "Removing plymouth boot splash..."
+        sudo apt remove -y plymouth plymouth-theme-ubuntu-text
     fi
     
-    # Disable any existing display manager
-    local display_managers=("gdm" "gdm3" "lightdm" "sddm")
-    for dm in "${display_managers[@]}"; do
-        if systemctl is-enabled --quiet "$dm" 2>/dev/null; then
-            info "Disabling display manager: $dm"
-            sudo systemctl disable "$dm"
-            sudo systemctl mask "$dm"
+    # Disable all display managers and GUI services
+    local gui_services=(
+        "gdm" "gdm3" "lightdm" "sddm"  # Display managers
+        "plymouth" "plymouth-quit" "plymouth-quit-wait" "plymouth-start"  # Plymouth services
+        "nvidia-persistenced"  # NVIDIA services
+        "graphical.target"  # Graphical target
+    )
+    
+    for service in "${gui_services[@]}"; do
+        if systemctl is-enabled --quiet "$service" 2>/dev/null; then
+            info "Disabling service: $service"
+            sudo systemctl disable "$service" 2>/dev/null || true
+            sudo systemctl mask "$service" 2>/dev/null || true
         fi
     done
     
+    # Set multi-user.target as default
+    sudo systemctl set-default multi-user.target
+    
+    # Create emergency fallback script
+    cat << 'EOF' | sudo tee /usr/local/bin/emergency-network > /dev/null
+#!/bin/bash
+# Emergency network configuration script
+ip link set dev enp6s0 up
+ip addr add 192.168.1.123/24 dev enp6s0
+ip route add default via 192.168.1.1
+EOF
+    
+    sudo chmod +x /usr/local/bin/emergency-network
+    
+    # Create systemd service for emergency network
+    cat << 'EOF' | sudo tee /etc/systemd/system/emergency-network.service > /dev/null
+[Unit]
+Description=Emergency Network Configuration
+After=network.target
+Before=ssh.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/emergency-network
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    
+    sudo systemctl enable emergency-network.service
+    
     success "System configured for headless operation"
+    info "Added emergency network fallback configuration"
 }
 
 prepare_for_module2() {
