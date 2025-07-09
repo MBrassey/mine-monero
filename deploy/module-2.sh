@@ -76,6 +76,11 @@ for pkg in i2c-tools wget git build-essential qtbase5-dev qtchooser qt5-qmake qt
     fi
 done
 
+# Install required packages first
+log "Installing required packages..."
+DEBIAN_FRONTEND=noninteractive apt-get update
+DEBIAN_FRONTEND=noninteractive apt-get install -y psmisc # for killall
+
 # Build OpenRGB from source
 log "Building OpenRGB from source..."
 cd /tmp
@@ -98,9 +103,8 @@ if ! make -j$(nproc); then
     exit 1
 fi
 
-# Stop any running instances before installing
-systemctl stop openrgb 2>/dev/null || true
-killall openrgb 2>/dev/null || true
+# Stop any running OpenRGB instances
+pkill openrgb || true
 sleep 2
 
 # Install the binary and support files
@@ -128,65 +132,41 @@ if [ -n "$SUDO_USER" ]; then
     done
 fi
 
-# Update systemd service with fixed command handling
-cat > /etc/systemd/system/openrgb.service << EOF
-[Unit]
-Description=OpenRGB LED Control
-After=multi-user.target systemd-modules-load.service
-Wants=modprobe@i2c_dev.service modprobe@i2c_piix4.service modprobe@i2c_i801.service
-
-[Service]
-Type=simple
-# Wait for devices
-ExecStartPre=/bin/sleep 5
-
-# Kill any existing instances
-ExecStartPre=-/usr/bin/killall openrgb
-
-# Load modules
-ExecStartPre=/sbin/modprobe i2c_dev
-ExecStartPre=/sbin/modprobe i2c_piix4 force=1
-ExecStartPre=/sbin/modprobe i2c_i801 force_addr=1
-
-# Set device permissions
-ExecStartPre=/bin/chmod 666 /dev/i2c-*
-ExecStartPre=/bin/chmod 666 /dev/hidraw*
-
-# Start OpenRGB
-ExecStart=/usr/bin/openrgb --server --nodetect --profile default
-
-Restart=on-failure
-RestartSec=3
-User=root
-Environment=DISPLAY=:0
-SupplementaryGroups=i2c input video plugdev
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
 # Stop any existing service
 systemctl stop openrgb || true
 sleep 2
 
-# Create OpenRGB config directories
+# Remove any existing config and service files
+rm -f /etc/systemd/system/openrgb.service
+rm -rf /root/.config/OpenRGB
+rm -rf /home/$SUDO_USER/.config/OpenRGB
+
+# Create fresh config directories
 mkdir -p /root/.config/OpenRGB
 mkdir -p /home/$SUDO_USER/.config/OpenRGB
 
-# Create a minimal working profile
+# Create a basic working profile
 cat > /root/.config/OpenRGB/default.orp << EOF
 {
-    "header": {
-        "version": 3,
-        "description": "Default Profile",
-        "author": "OpenRGB"
-    },
+    "version": 3,
     "controllers": [
         {
             "name": "ASRock B650M PG Lightning WiFi",
             "type": "Motherboard",
+            "description": "ASRock Polychrome USB Device",
+            "version": "",
+            "serial": "",
+            "location": "HID: /dev/hidraw0",
             "vendor": "ASRock",
-            "active_mode": "Static",
+            "active_mode": "Direct",
+            "modes": [
+                {
+                    "name": "Direct",
+                    "value": 1,
+                    "flags": 0,
+                    "colors": ["${TARGET_COLOR}"]
+                }
+            ],
             "colors": ["${TARGET_COLOR}"]
         }
     ]
@@ -197,51 +177,50 @@ EOF
 cp -f /root/.config/OpenRGB/default.orp "/home/$SUDO_USER/.config/OpenRGB/"
 chown -R "$SUDO_USER:$SUDO_USER" "/home/$SUDO_USER/.config/OpenRGB"
 
-# Test OpenRGB directly first
-echo "Testing OpenRGB directly..."
-openrgb --server --nodetect &
-sleep 3
-openrgb --nodetect --device 0 --mode static --color ${TARGET_COLOR}
-sleep 1
-killall openrgb
+# Create simple systemd service
+cat > /etc/systemd/system/openrgb.service << EOF
+[Unit]
+Description=OpenRGB LED Control
+After=multi-user.target
 
-# Reload and restart service
-echo "Starting OpenRGB service..."
+[Service]
+Type=simple
+ExecStartPre=/bin/sleep 5
+ExecStart=/usr/bin/openrgb --server
+Restart=on-failure
+RestartSec=3
+User=root
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Reload systemd
 systemctl daemon-reload
+
+# Try setting colors directly first
+log "Testing direct color setting..."
+openrgb --device 0 --mode direct --color ${TARGET_COLOR}
+sleep 2
+
+# Start the service
+log "Starting OpenRGB service..."
 systemctl enable openrgb
 systemctl restart openrgb
-
-# Wait for service to initialize
 sleep 5
 
-# Check service status
-echo
-echo "OpenRGB Service Status:"
+# Verify status
+log "Checking OpenRGB status..."
 systemctl status openrgb --no-pager
 
 echo
 echo "Current OpenRGB device status:"
-openrgb --nodetect --list-devices
+openrgb --list-devices
 
 echo
-echo "A reboot is REQUIRED to properly initialize all hardware:"
-echo "1. Load all kernel modules with correct options"
-echo "2. Initialize SMBus and I2C controllers with proper parameters"
-echo "3. Apply all user and device permissions"
-echo "4. Initialize USB and PCI device detection"
-echo
-echo "After reboot:"
-echo "1. The systemd service will automatically set colors to #${TARGET_COLOR}"
-echo "2. You can verify by running: openrgb --list-devices"
-echo "3. To change colors manually: openrgb --color RRGGBB"
-echo "4. To use the GUI: just run 'openrgb'"
-echo
+echo "A reboot is REQUIRED to properly initialize all hardware."
 echo "Would you like to reboot now? [y/N] "
 read -r response
 if [[ "$response" =~ ^[Yy]$ ]]; then
     reboot
 fi
-
-echo
-echo "If you choose not to reboot now, please reboot manually before using OpenRGB."
-echo "After reboot, the systemd service will automatically set your devices to #${TARGET_COLOR}"
