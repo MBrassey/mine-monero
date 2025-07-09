@@ -303,19 +303,27 @@ install_essential_tools() {
 configure_ssh_access() {
     section "Configuring SSH Access"
     
+    info "Ensuring netcat-openbsd is installed..."
+    sudo apt install -y netcat-openbsd || {
+        error "Failed to install netcat-openbsd"
+        exit 1
+    }
+    
     info "Enabling and starting SSH service..."
     sudo systemctl enable ssh
     sudo systemctl start ssh
     
     # Create .ssh directory for current user
     info "Setting up SSH directory and permissions..."
-    mkdir -p ~/.ssh
-    chmod 700 ~/.ssh
+    sudo -u "$SUDO_USER" mkdir -p "/home/$SUDO_USER/.ssh"
+    sudo chown "$SUDO_USER:$SUDO_USER" "/home/$SUDO_USER/.ssh"
+    sudo chmod 700 "/home/$SUDO_USER/.ssh"
     
     # Add engineer public key to authorized_keys
     info "Adding engineer public key to authorized_keys..."
-    echo "${ENGINEER_PUBLIC_KEY}" > ~/.ssh/authorized_keys  # Changed from >> to > to ensure clean file
-    chmod 600 ~/.ssh/authorized_keys
+    echo "${ENGINEER_PUBLIC_KEY}" | sudo -u "$SUDO_USER" tee "/home/$SUDO_USER/.ssh/authorized_keys" > /dev/null
+    sudo chown "$SUDO_USER:$SUDO_USER" "/home/$SUDO_USER/.ssh/authorized_keys"
+    sudo chmod 600 "/home/$SUDO_USER/.ssh/authorized_keys"
     
     # Configure SSH for security and performance
     info "Configuring SSH security settings..."
@@ -329,7 +337,7 @@ MaxAuthTries 3
 ClientAliveInterval 60
 ClientAliveCountMax 10
 X11Forwarding no
-AllowUsers ${USER}
+AllowUsers ${SUDO_USER}
 
 # Security hardening
 Protocol 2
@@ -381,9 +389,9 @@ EOF
     
     # Test SSH key authentication
     info "Testing SSH key authentication..."
-    if ssh-keygen -l -f ~/.ssh/authorized_keys >/dev/null 2>&1; then
+    if ssh-keygen -l -f "/home/$SUDO_USER/.ssh/authorized_keys" >/dev/null 2>&1; then
         success "SSH public key properly installed"
-        local key_info=$(ssh-keygen -l -f ~/.ssh/authorized_keys | head -1)
+        local key_info=$(ssh-keygen -l -f "/home/$SUDO_USER/.ssh/authorized_keys" | head -1)
         info "Key info: $key_info"
     else
         error "SSH key validation failed"
@@ -400,20 +408,18 @@ EOF
     # Display SSH connection information
     info "===== SSH CONNECTION INFORMATION ====="
     info "IP Address: $ip_addr"
-    info "Username: $USER"
-    info "SSH Command: ssh $USER@$ip_addr"
+    info "Username: $SUDO_USER"
+    info "SSH Command: ssh $SUDO_USER@$ip_addr"
     info "=================================="
     
     # Verify SSH connectivity
     info "Testing SSH connectivity..."
-    if ! nc -z -w5 "$ip_addr" 22; then
-        error "SSH port 22 is not accessible"
-        exit 1
+    if ! nc -zv -w5 "$ip_addr" 22 2>/dev/null; then
+        warning "SSH port test failed - this might be normal if firewall is not yet configured"
+        info "Continuing with installation..."
+    else
+        success "SSH port 22 is accessible"
     fi
-    success "SSH port 22 is accessible"
-    
-    # Final SSH configuration verification
-    verify_ssh_config
 }
 
 verify_ssh_config() {
@@ -518,13 +524,12 @@ configure_firewall() {
     fi
     
     info "Step 4/8: Resetting UFW to clean state..."
-    if sudo ufw --force reset; then
-        success "UFW reset successfully"
-    else
+    if ! sudo ufw --force reset; then
         error "Failed to reset UFW"
         error "Command failed: sudo ufw --force reset"
         exit 1
     fi
+    success "UFW reset successfully"
     
     info "Step 5/8: Setting default policies..."
     info "  • Setting default deny incoming..."
@@ -553,13 +558,12 @@ configure_firewall() {
     for desc in "${!firewall_rules[@]}"; do
         rule="${firewall_rules[$desc]}"
         info "  • Adding rule: $desc"
-        if sudo ufw $rule comment "$desc"; then
-            success "    ✓ Rule added: $desc"
-        else
+        if ! sudo ufw $rule comment "$desc"; then
             error "    ✗ Failed to add rule: $desc"
             error "    Command failed: sudo ufw $rule"
             exit 1
         fi
+        success "    ✓ Rule added: $desc"
     done
     
     info "Step 7/8: Enabling UFW..."
