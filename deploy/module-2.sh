@@ -148,45 +148,41 @@ mkdir -p /home/$SUDO_USER/.config/OpenRGB
 # Set colors directly first
 log "Setting colors for all devices..."
 
-# Kill any existing OpenRGB processes
+# Kill any existing OpenRGB processes and server
 pkill openrgb || true
 sleep 2
 
-# Start OpenRGB server
+# Start fresh OpenRGB server
 openrgb --server &
 sleep 3
 
 # Set CPU Cooler - Device 0
 log "Setting CPU Cooler..."
-# Set each part of the CPU cooler
 openrgb --device 0 --mode direct --color ${TARGET_COLOR}
 sleep 1
-openrgb --device 0 --zone "Logo" --color ${TARGET_COLOR}
-sleep 0.5
-openrgb --device 0 --zone "Fan" --color ${TARGET_COLOR}
-sleep 0.5
-openrgb --device 0 --zone "Ring" --color ${TARGET_COLOR}
+openrgb --device 0 --zone 0 --color ${TARGET_COLOR}  # Logo
+openrgb --device 0 --zone 1 --color ${TARGET_COLOR}  # Fan
+openrgb --device 0 --zone 2 --color ${TARGET_COLOR}  # Ring
 sleep 1
 
 # Set Motherboard - Device 1
 log "Setting Motherboard..."
-# First set the whole device
 openrgb --device 1 --mode direct --color ${TARGET_COLOR}
 sleep 1
+for i in {0..4}; do
+    openrgb --device 1 --zone $i --color ${TARGET_COLOR}
+    sleep 0.2
+done
 
-# Then set each zone by name
-openrgb --device 1 --zone "RGB LED 1 Header" --color ${TARGET_COLOR}
-sleep 0.2
-openrgb --device 1 --zone "Addressable Header 1" --color ${TARGET_COLOR}
-sleep 0.2
-openrgb --device 1 --zone "Addressable Header 2" --color ${TARGET_COLOR}
-sleep 0.2
-openrgb --device 1 --zone "PCB" --color ${TARGET_COLOR}
-sleep 0.2
-openrgb --device 1 --zone "Addressable Header 3/Audio" --color ${TARGET_COLOR}
-sleep 1
+# Try to detect and set RAM
+log "Setting RAM..."
+for i in {2..5}; do
+    openrgb --device $i --mode direct --color ${TARGET_COLOR} 2>/dev/null || true
+    sleep 0.2
+done
 
-# Try setting all devices at once as final pass
+# Final pass - set everything
+log "Final pass - setting all devices..."
 openrgb --mode direct --color ${TARGET_COLOR}
 sleep 1
 
@@ -207,20 +203,19 @@ ExecStart=/bin/bash -c '\
     /usr/bin/openrgb --server & \
     sleep 3 && \
     /usr/bin/openrgb --device 0 --mode direct --color ${TARGET_COLOR} && \
-    sleep 1 && \
-    /usr/bin/openrgb --device 0 --zone "Logo" --color ${TARGET_COLOR} && \
-    sleep 0.5 && \
-    /usr/bin/openrgb --device 0 --zone "Fan" --color ${TARGET_COLOR} && \
-    sleep 0.5 && \
-    /usr/bin/openrgb --device 0 --zone "Ring" --color ${TARGET_COLOR} && \
+    /usr/bin/openrgb --device 0 --zone 0 --color ${TARGET_COLOR} && \
+    /usr/bin/openrgb --device 0 --zone 1 --color ${TARGET_COLOR} && \
+    /usr/bin/openrgb --device 0 --zone 2 --color ${TARGET_COLOR} && \
     sleep 1 && \
     /usr/bin/openrgb --device 1 --mode direct --color ${TARGET_COLOR} && \
-    sleep 1 && \
-    /usr/bin/openrgb --device 1 --zone "RGB LED 1 Header" --color ${TARGET_COLOR} && \
-    /usr/bin/openrgb --device 1 --zone "Addressable Header 1" --color ${TARGET_COLOR} && \
-    /usr/bin/openrgb --device 1 --zone "Addressable Header 2" --color ${TARGET_COLOR} && \
-    /usr/bin/openrgb --device 1 --zone "PCB" --color ${TARGET_COLOR} && \
-    /usr/bin/openrgb --device 1 --zone "Addressable Header 3/Audio" --color ${TARGET_COLOR} && \
+    for i in {0..4}; do \
+        /usr/bin/openrgb --device 1 --zone $i --color ${TARGET_COLOR}; \
+        sleep 0.2; \
+    done && \
+    for i in {2..5}; do \
+        /usr/bin/openrgb --device $i --mode direct --color ${TARGET_COLOR} 2>/dev/null || true; \
+        sleep 0.2; \
+    done && \
     sleep 1 && \
     /usr/bin/openrgb --mode direct --color ${TARGET_COLOR}'
 
