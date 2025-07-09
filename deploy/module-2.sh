@@ -28,16 +28,41 @@ echo
 
 # Install dependencies
 log "Installing dependencies..."
-apt update
-apt install -y \
+# Disable PackageKit temporarily for apt operations
+systemctl stop packagekit >/dev/null 2>&1 || true
+
+DEBIAN_FRONTEND=noninteractive apt-get update
+DEBIAN_FRONTEND=noninteractive apt-get install -y \
     i2c-tools \
-    wget
-    
-    # Load required kernel modules
+    wget \
+    git \
+    build-essential \
+    qtbase5-dev \
+    qtchooser \
+    qt5-qmake \
+    qtbase5-dev-tools \
+    libusb-1.0-0-dev \
+    libhidapi-dev \
+    pkgconf \
+    cmake
+
+# Load required kernel modules
 log "Loading kernel modules..."
-        modprobe i2c-dev
+modprobe i2c-dev
 modprobe i2c-piix4
 modprobe i2c-i801
+
+# Build and install OpenRGB from source
+log "Building OpenRGB from source..."
+cd /tmp
+rm -rf OpenRGB || true
+git clone --depth 1 https://gitlab.com/CalcProgrammer1/OpenRGB
+cd OpenRGB
+qmake OpenRGB.pro
+make -j$(nproc)
+make install
+cd ..
+rm -rf OpenRGB
 
 # Enable I2C/SMBus access
 log "Setting up I2C/SMBus access..."
@@ -69,20 +94,13 @@ EOF
     udevadm control --reload-rules
     udevadm trigger
     
-# Install OpenRGB
-log "Installing OpenRGB..."
-cd /tmp
-wget -O openrgb.AppImage https://openrgb.org/releases/release_0.9/OpenRGB_0.9_x86_64_6128731.AppImage
-chmod +x openrgb.AppImage
-mv openrgb.AppImage /usr/local/bin/openrgb
-
 # Create desktop entry
 log "Creating desktop entry..."
 cat > /usr/share/applications/openrgb.desktop << EOF
 [Desktop Entry]
 Name=OpenRGB
 Comment=RGB Control Utility
-Exec=/usr/local/bin/openrgb
+Exec=openrgb
 Icon=utilities-terminal
 Terminal=false
 Type=Application
