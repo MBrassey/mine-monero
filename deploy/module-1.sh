@@ -533,10 +533,29 @@ configure_firewall() {
     
     info "Step 5/8: Setting default policies..."
     info "  • Setting default deny incoming..."
-    sudo ufw default deny incoming
+    if ! sudo ufw default deny incoming; then
+        error "Failed to set default incoming policy"
+        exit 1
+    fi
+    success "Default incoming policy set to deny"
+    
     info "  • Setting default allow outgoing..."
-    sudo ufw default allow outgoing
-    success "Default policies configured"
+    if ! sudo ufw default allow outgoing; then
+        error "Failed to set default outgoing policy"
+        exit 1
+    fi
+    success "Default outgoing policy set to allow"
+    
+    # Verify default policies were set
+    if ! sudo ufw status verbose | grep -q "Default: deny (incoming)"; then
+        error "Failed to verify default incoming policy"
+        exit 1
+    fi
+    if ! sudo ufw status verbose | grep -q "Default: allow (outgoing)"; then
+        error "Failed to verify default outgoing policy"
+        exit 1
+    fi
+    success "Default policies configured and verified"
     
     info "Step 6/8: Configuring firewall rules..."
     
