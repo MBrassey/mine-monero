@@ -81,9 +81,15 @@ fi
 
 # Enable direct hardware access
 log "Setting up hardware access..."
+
+# Create i2c group if it doesn't exist
+if ! getent group i2c >/dev/null; then
+    groupadd i2c
+fi
+
 # Add current user to required groups
 if [ -n "$SUDO_USER" ]; then
-    usermod -a -G i2c,input,uucp,video "$SUDO_USER"
+    usermod -a -G i2c,input,video "$SUDO_USER"
 fi
 
 # Enable hardware access modules
@@ -95,18 +101,36 @@ modules=(
     "i2c-acpi"
     "i2c_hid"
     "ch341"
-    "it87"        # Common motherboard sensor
-    "nct6775"     # Common motherboard sensor
-    "w83795"      # Another common sensor
-    "w83627hf"    # Another common sensor
+    "it87"
+    "nct6775"
+    "w83795"
+    "w83627hf"
 )
 
+# Load and configure modules
 for module in "${modules[@]}"; do
     modprobe "$module" 2>/dev/null || true
     if ! grep -q "^$module" /etc/modules; then
         echo "$module" >> /etc/modules
     fi
 done
+
+# Update module dependencies
+depmod -a
+
+# Set up proper SMBus permissions
+log "Setting up SMBus permissions..."
+for i2c_dev in /dev/i2c-*; do
+    if [ -e "$i2c_dev" ]; then
+        chmod 666 "$i2c_dev"
+        chown root:i2c "$i2c_dev"
+    fi
+done
+
+# Create udev rules for SMBus/I2C access
+cat > /etc/udev/rules.d/99-i2c.rules << EOF
+KERNEL=="i2c-[0-9]*", GROUP="i2c", MODE="0666"
+EOF
 
 # Update udev rules with correct paths
 log "Updating udev rules..."
@@ -150,30 +174,28 @@ cat > /etc/systemd/system/openrgb.service << EOF
 [Unit]
 Description=OpenRGB LED Control
 After=multi-user.target
+Wants=modprobe@i2c_dev.service
 
 [Service]
 Type=simple
+ExecStartPre=/sbin/modprobe i2c_dev
+ExecStartPre=/bin/sh -c 'for i2c in /dev/i2c-*; do chmod 666 \$i2c; done'
 ExecStart=/usr/bin/openrgb --server --noautoconnect --brightness 100 --color ${TARGET_COLOR}
 Restart=on-failure
 RestartSec=3
 User=root
 Environment=DISPLAY=:0
 # Add proper device permissions
-SupplementaryGroups=i2c input
+SupplementaryGroups=i2c input video
 # Add proper capabilities
-AmbientCapabilities=CAP_SYS_RAWIO
+AmbientCapabilities=CAP_SYS_RAWIO CAP_SYS_ADMIN
 NoNewPrivileges=true
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-# Clean up
-cd ..
-rm -rf OpenRGB
-
-# Reload and restart services
-log "Restarting services..."
+# Reload systemd and restart service
 systemctl daemon-reload
 systemctl enable openrgb
 systemctl restart openrgb
@@ -181,31 +203,15 @@ systemctl restart openrgb
 # Wait for service to initialize
 sleep 5
 
-# Try to detect hardware
-log "Checking for RGB hardware..."
-echo "Running hardware detection..."
+# Try to set colors now
+log "Attempting to set colors..."
+echo "Setting all devices to red (#FF0000)..."
+openrgb --noautoconnect --brightness 100 --color FF0000
 
-# Try to detect devices with SMBus scanning
-if ! i2cdetect -l 2>/dev/null | grep -q "SMBus"; then
-    echo "No SMBus controllers detected. This might be normal depending on your hardware."
-else
-    echo "SMBus controllers found. This is good!"
-fi
-
-# Check USB devices
-echo "Checking USB devices..."
-lsusb
-
-# Try to set colors now (might work for some devices before reboot)
-echo
-echo "Attempting to set colors (some devices might work before reboot)..."
-openrgb --noautoconnect --brightness 100 --color ${TARGET_COLOR}
-sleep 2
-
-# Show current device status
+# Show current status
 echo
 echo "Current OpenRGB device status:"
-openrgb --list-devices || true
+openrgb --list-devices
 
 echo
 echo "A reboot is REQUIRED to properly initialize all hardware:"
