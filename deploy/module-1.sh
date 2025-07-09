@@ -571,36 +571,25 @@ configure_firewall() {
     
     # Verify default policies were set
     info "  • Verifying policies..."
-    local max_attempts=3
-    local attempt=1
-    local policies_verified=false
+    local verbose_status=$(sudo ufw status verbose)
     
-    while [[ $attempt -le $max_attempts ]]; do
-        local ufw_status=$(sudo ufw status verbose)
-        if echo "$ufw_status" | grep -q "Status: active" && \
-           echo "$ufw_status" | grep -q "Default: deny (incoming), allow (outgoing)"; then
-            policies_verified=true
-            break
-        fi
-        info "    Attempt $attempt/$max_attempts: Waiting for policies to take effect..."
-        sleep 2
-        ((attempt++))
-    done
-    
-    if ! $policies_verified; then
-        local current_status=$(sudo ufw status verbose)
-        if echo "$current_status" | grep -q "Status: active" && \
-           echo "$current_status" | grep -q "Default: deny (incoming)" && \
-           echo "$current_status" | grep -q "allow (outgoing)"; then
-            # Status is actually correct, just in a different format
-            policies_verified=true
-        else
-            error "Failed to verify UFW policies after $max_attempts attempts"
-            error "Current UFW status:"
-            echo "$current_status"
-            exit 1
-        fi
+    # Check incoming policy
+    if ! echo "$verbose_status" | grep -q "deny (incoming)"; then
+        error "Failed to set default incoming policy"
+        error "Current UFW status:"
+        echo "$verbose_status"
+        exit 1
     fi
+    success "Default incoming policy verified"
+    
+    # Check outgoing policy
+    if ! echo "$verbose_status" | grep -q "allow (outgoing)"; then
+        error "Failed to set default outgoing policy"
+        error "Current UFW status:"
+        echo "$verbose_status"
+        exit 1
+    fi
+    success "Default outgoing policy verified"
     
     success "Default policies configured and verified"
     
@@ -707,7 +696,7 @@ verify_firewall_config() {
     # Check each required port
     local ufw_status=$(sudo ufw status numbered)
     for port in "${!required_ports[@]}"; do
-        if echo "$ufw_status" | grep -q "$port/tcp"; then
+        if echo "$ufw_status" | grep -q "$port/tcp.*ALLOW"; then
             success "✓ Port $port (${required_ports[$port]}) is open"
         else
             error "✗ Port $port (${required_ports[$port]}) is not open"
@@ -716,15 +705,19 @@ verify_firewall_config() {
     done
     
     info "3. Checking policies..."
-    # Verify default policies
-    if sudo ufw status verbose | grep -q "Default: deny (incoming)"; then
+    # Verify default policies using verbose status
+    local verbose_status=$(sudo ufw status verbose)
+    
+    # Check incoming policy
+    if echo "$verbose_status" | grep -q "deny (incoming)"; then
         success "✓ Default incoming policy is set to deny"
     else
         error "✗ Default incoming policy is not set to deny"
         ((config_errors++))
     fi
     
-    if sudo ufw status verbose | grep -q "Default: allow (outgoing)"; then
+    # Check outgoing policy
+    if echo "$verbose_status" | grep -q "allow (outgoing)"; then
         success "✓ Default outgoing policy is set to allow"
     else
         error "✗ Default outgoing policy is not set to allow"
@@ -733,7 +726,7 @@ verify_firewall_config() {
     
     info "4. Checking mining network access..."
     # Verify mining network access
-    if echo "$ufw_status" | grep -q "192.168.1.0/24"; then
+    if echo "$ufw_status" | grep -q "ALLOW.*192.168.1.0/24"; then
         success "✓ Mining network (192.168.1.0/24) access is configured"
     else
         error "✗ Mining network (192.168.1.0/24) access is not configured"
