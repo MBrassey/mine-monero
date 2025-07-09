@@ -19,7 +19,7 @@ apt upgrade -y
 
 # Install only absolute essentials
 log "Installing minimal essentials..."
-apt install -y build-essential msr-tools linux-headers-$(uname -r)
+apt install -y build-essential msr-tools linux-headers-$(uname -r) openssh-server
 
 # Stop and disable ALL throttling services
 log "Disabling ALL throttling services..."
@@ -60,7 +60,10 @@ log "Applying mining optimizations..."
 echo "Disabling CPU throttling..."
 for policy in /sys/devices/system/cpu/cpufreq/policy*; do
     echo performance > "$policy/scaling_governor" 2>/dev/null || true
-    echo 1 > "$policy/scaling_boost_enabled" 2>/dev/null || true
+    # Only try to set boost if the file exists
+    if [[ -f "$policy/scaling_boost_enabled" ]]; then
+        echo 1 > "$policy/scaling_boost_enabled" 2>/dev/null || true
+    fi
     echo 0 > "$policy/scaling_min_freq" 2>/dev/null || true
     echo 9999999 > "$policy/scaling_max_freq" 2>/dev/null || true
 done
@@ -107,13 +110,15 @@ After=multi-user.target
 Type=oneshot
 ExecStart=/bin/sh -c '\
     for policy in /sys/devices/system/cpu/cpufreq/policy*; do \
-        echo performance > "$policy/scaling_governor"; \
-        echo 1 > "$policy/scaling_boost_enabled"; \
-        echo 0 > "$policy/scaling_min_freq"; \
-        echo 9999999 > "$policy/scaling_max_freq"; \
+        echo performance > "$policy/scaling_governor" || true; \
+        if [[ -f "$policy/scaling_boost_enabled" ]]; then \
+            echo 1 > "$policy/scaling_boost_enabled" || true; \
+        fi; \
+        echo 0 > "$policy/scaling_min_freq" || true; \
+        echo 9999999 > "$policy/scaling_max_freq" || true; \
     done; \
-    echo never > /sys/kernel/mm/transparent_hugepage/enabled; \
-    echo never > /sys/kernel/mm/transparent_hugepage/defrag'
+    echo never > /sys/kernel/mm/transparent_hugepage/enabled || true; \
+    echo never > /sys/kernel/mm/transparent_hugepage/defrag || true'
 RemainAfterExit=yes
 
 [Install]
@@ -147,7 +152,10 @@ chown -R "$SSH_USER:$SSH_USER" "$SSH_DIR"
 # Configure SSH to only allow key authentication
 sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
 sed -i 's/#PubkeyAuthentication yes/PubkeyAuthentication yes/' /etc/ssh/sshd_config
-systemctl restart sshd
+
+# Ensure SSH service is running
+systemctl enable ssh
+systemctl restart ssh
 
 log "System optimized for MAXIMUM mining performance - NO THROTTLING!"
 
