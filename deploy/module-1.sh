@@ -1319,13 +1319,34 @@ main() {
     verify_headless_readiness
     
     success "Module 1 installation completed successfully"
-    warning "System reboot required for all changes to take effect"
-    info "After reboot, you can proceed with Module 2 installation"
     
-    if confirm "Would you like to reboot now?" "y"; then
-        sudo reboot
+    section "Preparing for Headless Operation"
+    info "IMPORTANT: System will now halt for video card removal"
+    info "1. System will shut down completely (all lights off)"
+    info "2. Remove the video card from the system"
+    info "3. Power the system back on"
+    info "4. Wait 2-3 minutes for full boot"
+    info "5. Connect via SSH: ssh $SUDO_USER@$ip_addr"
+    info "6. Then proceed with Module 2 installation"
+    
+    if confirm "Ready to halt system for video card removal?" "n"; then
+        echo ""
+        echo "!!! REMOVING VIDEO CARD PROCEDURE !!!"
+        echo "1. Wait for system to completely shut down"
+        echo "2. Remove power cable"
+        echo "3. Remove video card"
+        echo "4. Reconnect power cable"
+        echo "5. Power on system"
+        echo "6. Wait 2-3 minutes"
+        echo "7. SSH from another machine: ssh $SUDO_USER@$ip_addr"
+        echo ""
+        warning "System halting in 10 seconds..."
+        sleep 10
+        sudo halt
     else
-        warning "Please reboot the system manually before proceeding with Module 2"
+        warning "System will remain powered on with video card"
+        warning "You will need to manually halt and remove video card later"
+        warning "Use 'sudo halt' when ready to proceed with video card removal"
     fi
 }
 
