@@ -503,7 +503,6 @@ verify_ssh_config() {
 
 configure_headless_boot() {
     section "Configuring Flexible Boot Mode"
-    
     info "Setting up system to work with or without video card..."
 
     # Backup original GRUB config
@@ -512,25 +511,24 @@ configure_headless_boot() {
         info "GRUB config backed up"
     fi
 
-    # Configure GRUB - ONLY the essential parameters needed
-    info "Configuring GRUB for headless operation..."
+    # Set GRUB console output for both local and serial
     sudo sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="console=tty1 console=ttyS0,115200n8"/' /etc/default/grub
     sudo sed -i 's/^GRUB_CMDLINE_LINUX=.*/GRUB_CMDLINE_LINUX="console=tty1 console=ttyS0,115200n8"/' /etc/default/grub
-    
+
     # Update GRUB
     info "Updating GRUB configuration..."
     sudo update-grub
 
-    # Set multi-user target (non-graphical)
+    # Set multi-user target (no GUI)
     sudo systemctl set-default multi-user.target
-    
+
     # Enable serial console
     sudo systemctl enable serial-getty@ttyS0.service
-    
-    # Remove Plymouth (Ubuntu's boot splash system)
-    info "Removing Plymouth..."
+
+    # Remove Plymouth (boot splash)
+    info "Removing Plymouth (boot splash)..."
     sudo apt-get remove -y plymouth plymouth-theme-ubuntu-text
-    
+
     # Prevent Plymouth from being reinstalled
     cat << 'EOF' | sudo tee /etc/apt/preferences.d/plymouth > /dev/null
 Package: plymouth*
@@ -538,11 +536,9 @@ Pin: release *
 Pin-Priority: -1
 EOF
 
-    # Create emergency recovery script
-    info "Creating emergency recovery script..."
+    # Emergency script to restore video output if needed
     cat << 'EOF' | sudo tee /usr/local/bin/emergency-video > /dev/null
 #!/bin/bash
-# Emergency script to restore video output if needed
 sudo sed -i 's/console=tty1 console=ttyS0,115200n8/quiet splash/' /etc/default/grub
 sudo update-grub
 echo "Video mode restored. Please reboot."
