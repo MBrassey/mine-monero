@@ -148,113 +148,49 @@ mkdir -p /home/$SUDO_USER/.config/OpenRGB
 # Set colors directly first
 log "Setting colors for all devices..."
 
-# Start OpenRGB server first
+# Kill any existing OpenRGB processes
+pkill openrgb || true
+sleep 2
+
+# Start OpenRGB server
 openrgb --server &
 sleep 3
 
-# Set CPU Cooler - Device 0 (each LED and zone)
+# Set CPU Cooler - Device 0
 log "Setting CPU Cooler..."
-# Set overall mode first
+# Set each part of the CPU cooler
 openrgb --device 0 --mode direct --color ${TARGET_COLOR}
 sleep 1
-
-# Set each zone
-openrgb --device 0 --zone 0 --color ${TARGET_COLOR} # Logo
-openrgb --device 0 --zone 1 --color ${TARGET_COLOR} # Fan
-openrgb --device 0 --zone 2 --color ${TARGET_COLOR} # Ring
+openrgb --device 0 --zone "Logo" --color ${TARGET_COLOR}
+sleep 0.5
+openrgb --device 0 --zone "Fan" --color ${TARGET_COLOR}
+sleep 0.5
+openrgb --device 0 --zone "Ring" --color ${TARGET_COLOR}
 sleep 1
-
-# Set each individual LED
-for i in {0..15}; do
-    openrgb --device 0 --led $i --color ${TARGET_COLOR}
-    sleep 0.1
-done
 
 # Set Motherboard - Device 1
 log "Setting Motherboard..."
-# Set overall mode first
+# First set the whole device
 openrgb --device 1 --mode direct --color ${TARGET_COLOR}
 sleep 1
 
-# Set each zone
-for zone in {0..4}; do
-    openrgb --device 1 --zone $zone --color ${TARGET_COLOR}
-    sleep 0.1
-done
+# Then set each zone by name
+openrgb --device 1 --zone "RGB LED 1 Header" --color ${TARGET_COLOR}
+sleep 0.2
+openrgb --device 1 --zone "Addressable Header 1" --color ${TARGET_COLOR}
+sleep 0.2
+openrgb --device 1 --zone "Addressable Header 2" --color ${TARGET_COLOR}
+sleep 0.2
+openrgb --device 1 --zone "PCB" --color ${TARGET_COLOR}
+sleep 0.2
+openrgb --device 1 --zone "Addressable Header 3/Audio" --color ${TARGET_COLOR}
+sleep 1
 
-# Set each LED individually
-for led in {0..244}; do
-    openrgb --device 1 --led $led --color ${TARGET_COLOR}
-    sleep 0.05
-done
+# Try setting all devices at once as final pass
+openrgb --mode direct --color ${TARGET_COLOR}
+sleep 1
 
-# Create a proper profile that includes all devices and zones
-cat > /root/.config/OpenRGB/default.orp << EOF
-{
-    "version": 3,
-    "controllers": [
-        {
-            "name": "AMD Wraith Prism",
-            "type": "Cooler",
-            "description": "AMD Wraith Prism Device",
-            "version": "V1.01.00",
-            "location": "HID: /dev/hidraw2",
-            "active_mode": "Direct",
-            "colors": ["${TARGET_COLOR}"],
-            "zones": [
-                {
-                    "name": "Logo",
-                    "colors": ["${TARGET_COLOR}"]
-                },
-                {
-                    "name": "Fan",
-                    "colors": ["${TARGET_COLOR}"]
-                },
-                {
-                    "name": "Ring",
-                    "colors": ["${TARGET_COLOR}"]
-                }
-            ]
-        },
-        {
-            "name": "ASRock B650M PG Lightning WiFi",
-            "type": "Motherboard",
-            "description": "ASRock Polychrome USB Device",
-            "location": "HID: /dev/hidraw0",
-            "active_mode": "Direct",
-            "colors": ["${TARGET_COLOR}"],
-            "zones": [
-                {
-                    "name": "RGB LED 1 Header",
-                    "colors": ["${TARGET_COLOR}"]
-                },
-                {
-                    "name": "Addressable Header 1",
-                    "colors": ["${TARGET_COLOR}"]
-                },
-                {
-                    "name": "Addressable Header 2",
-                    "colors": ["${TARGET_COLOR}"]
-                },
-                {
-                    "name": "PCB",
-                    "colors": ["${TARGET_COLOR}"]
-                },
-                {
-                    "name": "Addressable Header 3/Audio",
-                    "colors": ["${TARGET_COLOR}"]
-                }
-            ]
-        }
-    ]
-}
-EOF
-
-# Copy profile to user directory
-cp -f /root/.config/OpenRGB/default.orp "/home/$SUDO_USER/.config/OpenRGB/"
-chown -R "$SUDO_USER:$SUDO_USER" "/home/$SUDO_USER/.config/OpenRGB"
-
-# Update systemd service to be more thorough
+# Update systemd service
 cat > /etc/systemd/system/openrgb.service << EOF
 [Unit]
 Description=OpenRGB LED Control
@@ -266,30 +202,27 @@ Type=oneshot
 RemainAfterExit=yes
 ExecStartPre=/bin/sleep 5
 
-# Start server
+# Start server and set colors
 ExecStart=/bin/bash -c '\
     /usr/bin/openrgb --server & \
     sleep 3 && \
-    # Set CPU Cooler \
     /usr/bin/openrgb --device 0 --mode direct --color ${TARGET_COLOR} && \
     sleep 1 && \
-    /usr/bin/openrgb --device 0 --zone 0 --color ${TARGET_COLOR} && \
-    /usr/bin/openrgb --device 0 --zone 1 --color ${TARGET_COLOR} && \
-    /usr/bin/openrgb --device 0 --zone 2 --color ${TARGET_COLOR} && \
-    for i in {0..15}; do \
-        /usr/bin/openrgb --device 0 --led $i --color ${TARGET_COLOR}; \
-        sleep 0.1; \
-    done && \
-    # Set Motherboard \
+    /usr/bin/openrgb --device 0 --zone "Logo" --color ${TARGET_COLOR} && \
+    sleep 0.5 && \
+    /usr/bin/openrgb --device 0 --zone "Fan" --color ${TARGET_COLOR} && \
+    sleep 0.5 && \
+    /usr/bin/openrgb --device 0 --zone "Ring" --color ${TARGET_COLOR} && \
+    sleep 1 && \
     /usr/bin/openrgb --device 1 --mode direct --color ${TARGET_COLOR} && \
-    for zone in {0..4}; do \
-        /usr/bin/openrgb --device 1 --zone $zone --color ${TARGET_COLOR}; \
-        sleep 0.1; \
-    done && \
-    for led in {0..244}; do \
-        /usr/bin/openrgb --device 1 --led $led --color ${TARGET_COLOR}; \
-        sleep 0.05; \
-    done'
+    sleep 1 && \
+    /usr/bin/openrgb --device 1 --zone "RGB LED 1 Header" --color ${TARGET_COLOR} && \
+    /usr/bin/openrgb --device 1 --zone "Addressable Header 1" --color ${TARGET_COLOR} && \
+    /usr/bin/openrgb --device 1 --zone "Addressable Header 2" --color ${TARGET_COLOR} && \
+    /usr/bin/openrgb --device 1 --zone "PCB" --color ${TARGET_COLOR} && \
+    /usr/bin/openrgb --device 1 --zone "Addressable Header 3/Audio" --color ${TARGET_COLOR} && \
+    sleep 1 && \
+    /usr/bin/openrgb --mode direct --color ${TARGET_COLOR}'
 
 [Install]
 WantedBy=multi-user.target
