@@ -578,8 +578,7 @@ configure_firewall() {
     while [[ $attempt -le $max_attempts ]]; do
         local ufw_status=$(sudo ufw status verbose)
         if echo "$ufw_status" | grep -q "Status: active" && \
-           echo "$ufw_status" | grep -q "Default: deny (incoming)" && \
-           echo "$ufw_status" | grep -q "Default: allow (outgoing)"; then
+           echo "$ufw_status" | grep -q "Default: deny (incoming), allow (outgoing)"; then
             policies_verified=true
             break
         fi
@@ -589,10 +588,18 @@ configure_firewall() {
     done
     
     if ! $policies_verified; then
-        error "Failed to verify UFW policies after $max_attempts attempts"
-        error "Current UFW status:"
-        sudo ufw status verbose
-        exit 1
+        local current_status=$(sudo ufw status verbose)
+        if echo "$current_status" | grep -q "Status: active" && \
+           echo "$current_status" | grep -q "Default: deny (incoming)" && \
+           echo "$current_status" | grep -q "allow (outgoing)"; then
+            # Status is actually correct, just in a different format
+            policies_verified=true
+        else
+            error "Failed to verify UFW policies after $max_attempts attempts"
+            error "Current UFW status:"
+            echo "$current_status"
+            exit 1
+        fi
     fi
     
     success "Default policies configured and verified"
