@@ -29,41 +29,33 @@ if ! command -v openrgb &> /dev/null; then
     udevadm trigger
 fi
 
-# Enable required modules for AMD system
+# Add kernel parameter for AMD systems
+if ! grep -q "acpi_enforce_resources=lax" /etc/default/grub; then
+    sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT="/GRUB_CMDLINE_LINUX_DEFAULT="acpi_enforce_resources=lax /' /etc/default/grub
+    update-grub
+fi
+
+# Load required modules
 echo "Loading required modules..."
 modprobe i2c_dev
 modprobe i2c_piix4
-modprobe amdgpu
-modprobe i2c_smbus
-modprobe ee1004
-modprobe i2c_amd_mp2
-
-# Add modules to load at boot
-echo "i2c_dev" > /etc/modules-load.d/i2c.conf
-echo "i2c_piix4" >> /etc/modules-load.d/i2c.conf
-echo "amdgpu" >> /etc/modules-load.d/i2c.conf
-echo "i2c_smbus" >> /etc/modules-load.d/i2c.conf
-echo "ee1004" >> /etc/modules-load.d/i2c.conf
-echo "i2c_amd_mp2" >> /etc/modules-load.d/i2c.conf
 
 # Set permissions
 echo "Setting device permissions..."
-chown root:root /dev/i2c-* /dev/hidraw* 2>/dev/null || true
-chmod 666 /dev/i2c-* /dev/hidraw* 2>/dev/null || true
+chmod 666 /dev/i2c-* 2>/dev/null || true
+chmod 666 /dev/hidraw* 2>/dev/null || true
 
 # Kill any existing OpenRGB processes
 killall openrgb 2>/dev/null || true
 sleep 2
 
-# Show detected devices
-echo "Detected devices:"
-openrgb -l
-
-echo
+# Set everything to red
 echo "Setting all devices to red..."
-# Try both methods to ensure all devices are set
 openrgb --mode direct --color FF0000
-sleep 1
-openrgb -d all -c FF0000
 
-echo "Done."
+echo "Done. A reboot is required for kernel parameter changes to take effect."
+echo "Would you like to reboot now? [y/N] "
+read -r response
+if [[ "$response" =~ ^[Yy]$ ]]; then
+    reboot
+fi
