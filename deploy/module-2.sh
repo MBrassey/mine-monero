@@ -61,7 +61,7 @@ EOF
         cp "$GRUB_FILE" "${GRUB_FILE}.backup"
 
         # Remove existing parameters we want to manage
-        sed -i 's/acpi_enforce_resources=[^ ]* *//g' "$GRUB_FILE"
+        sed -i 's/acpi_enforce_resources=lax *//g' "$GRUB_FILE"
         sed -i 's/amd_iommu=[^ ]* *//g' "$GRUB_FILE"
         sed -i 's/iommu=[^ ]* *//g' "$GRUB_FILE"
         sed -i 's/pci=nocrs *//g' "$GRUB_FILE"
@@ -103,9 +103,16 @@ EOF
     fi
 
     # Create OpenRGB config directory with proper permissions
-    if [ -n "$SUDO_USER" ] && [ ! -d "/home/$SUDO_USER/.config/OpenRGB" ]; then
+    if [ -n "$SUDO_USER" ]; then
         echo "Setting up OpenRGB configuration..."
-        mkdir -p "/home/$SUDO_USER/.config/OpenRGB/logs"
+        mkdir -p "/home/$SUDO_USER/.config/OpenRGB/"{logs,profiles}
+        # Create default profile to prevent errors
+        cat > "/home/$SUDO_USER/.config/OpenRGB/profiles/default.orp" << EOF
+{
+    "version": 3,
+    "controllers": []
+}
+EOF
         chown -R "$SUDO_USER:$SUDO_USER" "/home/$SUDO_USER/.config/OpenRGB"
     fi
 
@@ -124,10 +131,14 @@ Type=oneshot
 RemainAfterExit=yes
 Environment="DISPLAY=:0"
 ExecStartPre=/bin/sleep 10
-ExecStart=/bin/bash -c '/usr/bin/openrgb --noautoconnect -d 0 -m Static -c $COLOR'
-ExecStart=/bin/bash -c '/usr/bin/openrgb --noautoconnect -d 1 -m Static -c $COLOR'
-ExecStart=/bin/bash -c '/usr/bin/openrgb --noautoconnect -d 2 -m Direct -c $COLOR'
-ExecStart=/bin/bash -c '/usr/bin/openrgb --noautoconnect -d 3 -m Direct -c $COLOR'
+# First detect devices
+ExecStart=/bin/bash -c '/usr/bin/openrgb --noautoconnect -l > /dev/null 2>&1'
+# RAM sticks (ENE DRAM) - Static mode
+ExecStart=/bin/bash -c '/usr/bin/openrgb --noautoconnect -d "ENE DRAM" -m Static -c $COLOR'
+# CPU Cooler - Set all zones at once
+ExecStart=/bin/bash -c '/usr/bin/openrgb --noautoconnect -d "AMD Wraith Prism" -m Direct -c $COLOR'
+# Motherboard (ASRock) - Static mode
+ExecStart=/bin/bash -c '/usr/bin/openrgb --noautoconnect -d "ASRock" -m Static -c $COLOR'
 
 [Install]
 WantedBy=multi-user.target
@@ -135,6 +146,17 @@ EOF
         systemctl daemon-reload
         systemctl enable openrgb.service
     fi
+}
+
+# Function to scan for XPG NVMe
+scan_nvme() {
+    echo "Scanning for XPG NVMe drive..."
+    for i in $(seq 0 11); do
+        if [ -e "/dev/i2c-$i" ]; then
+            echo "Scanning bus i2c-$i..."
+            i2cdetect -y $i 2>/dev/null
+        fi
+    done
 }
 
 # Function to set colors
@@ -153,21 +175,30 @@ set_colors() {
     # Set colors
     echo "Setting all devices to color #$color..."
     
+    # First detect devices
+    openrgb --noautoconnect -l > /dev/null 2>&1
+    sleep 1
+
     # Try up to 3 times in case of SMBus errors
     for i in {1..3}; do
-        if openrgb --noautoconnect -d 0 -m Static -c "$color" && \
-           openrgb --noautoconnect -d 1 -m Static -c "$color" && \
-           openrgb --noautoconnect -d 2 -m Direct -c "$color" && \
-           openrgb --noautoconnect -d 3 -m Direct -c "$color"; then
-            break
+        # Set all devices using device names instead of indices
+        if openrgb --noautoconnect -d "ENE DRAM" -m Static -c "$color" 2>/dev/null && \
+           openrgb --noautoconnect -d "AMD Wraith Prism" -m Direct -c "$color" 2>/dev/null && \
+           openrgb --noautoconnect -d "ASRock" -m Static -c "$color" 2>/dev/null; then
+            echo "Colors set successfully!"
+            return 0
         fi
         echo "Attempt $i failed, retrying..."
         sleep 1
     done
+    echo "Warning: Some devices may not have been set correctly."
 }
 
 # Run initial setup
 setup_initial_config
+
+# Scan for NVMe
+scan_nvme 2>/dev/null
 
 # Set colors
 set_colors "$COLOR"
@@ -182,7 +213,4 @@ if [ "$NEEDS_REBOOT" = "1" ]; then
     fi
 elif [ "$NEEDS_REGROUP" = "1" ]; then
     echo "IMPORTANT: You need to log out and back in for group changes to take effect."
-else
-    echo "Colors have been set successfully!"
-    systemctl restart openrgb.service
 fi
