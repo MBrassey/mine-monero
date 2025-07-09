@@ -501,6 +501,33 @@ verify_ssh_config() {
     fi
 }
 
+configure_headless_boot() {
+    section "Configuring Flexible Boot Mode"
+    
+    info "Setting up system to work with or without video card..."
+    
+    # Backup original GRUB config
+    if [[ -f /etc/default/grub ]]; then
+        sudo cp /etc/default/grub /etc/default/grub.backup
+    fi
+    
+    # Configure GRUB to support both console and video
+    sudo sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="console=tty1 console=ttyS0,115200n8"/' /etc/default/grub
+    sudo sed -i 's/^GRUB_CMDLINE_LINUX=.*/GRUB_CMDLINE_LINUX="console=tty1 console=ttyS0,115200n8"/' /etc/default/grub
+    
+    # Update GRUB
+    sudo update-grub
+    
+    # Enable serial console for remote access
+    sudo systemctl enable serial-getty@ttyS0.service
+    
+    # Set multi-user target
+    sudo systemctl set-default multi-user.target
+    
+    success "Flexible boot mode configured"
+    info "System will now work with or without video card"
+}
+
 configure_firewall() {
     section "Configuring Firewall"
     
@@ -1125,50 +1152,6 @@ EOF
     sudo systemctl enable thermal-monitor.service
     
     success "Thermal monitoring configured"
-}
-
-configure_headless_boot() {
-    section "Configuring Headless Boot"
-    
-    info "Configuring GRUB for headless operation..."
-    
-    # Backup original GRUB config
-    if [[ -f /etc/default/grub ]]; then
-        sudo cp /etc/default/grub /etc/default/grub.backup
-    fi
-    
-    # Configure GRUB for true headless operation (no video card required)
-    sudo sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="nomodeset video=efifb:off console=tty1 console=ttyS0,115200n8"/' /etc/default/grub
-    sudo sed -i 's/^GRUB_CMDLINE_LINUX=.*/GRUB_CMDLINE_LINUX="nomodeset video=efifb:off console=tty1 console=ttyS0,115200n8"/' /etc/default/grub
-    
-    # Ensure GRUB doesn't wait for video
-    sudo sed -i 's/^GRUB_TERMINAL=.*/GRUB_TERMINAL=console/' /etc/default/grub
-    sudo sed -i 's/^#GRUB_TERMINAL=.*/GRUB_TERMINAL=console/' /etc/default/grub
-    
-    # Update GRUB
-    sudo update-grub
-    
-    # Create udev rule to handle simpledrm module
-    info "Creating udev rule to handle simpledrm module..."
-    cat << 'EOF' | sudo tee /etc/udev/rules.d/71-disable-simpledrm.rules
-# Disable simpledrm framebuffer to prevent boot issues
-ACTION=="add", SUBSYSTEM=="module", KERNEL=="simpledrm", RUN+="/bin/rm -f /dev/dri/card0"
-EOF
-
-    # Reload udev rules
-    sudo udevadm control --reload-rules
-    
-    # Enable serial console
-    sudo systemctl enable serial-getty@ttyS0.service
-    
-    # Set multi-user target (non-graphical)
-    sudo systemctl set-default multi-user.target
-    
-    # Disable any services that might wait for display
-    sudo systemctl mask display-manager.service || true
-    
-    success "True headless operation configured (no video card required)"
-    info "System will boot without video card after reboot"
 }
 
 prepare_for_module2() {
