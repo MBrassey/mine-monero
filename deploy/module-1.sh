@@ -486,6 +486,19 @@ verify_ssh_config() {
 configure_firewall() {
     section "Configuring Firewall"
     
+    info "Ensuring UFW is installed..."
+    if ! command -v ufw >/dev/null 2>&1; then
+        info "Installing UFW..."
+        sudo apt install -y ufw || {
+            error "Failed to install UFW"
+            exit 1
+        }
+    fi
+    
+    info "Resetting UFW to default state..."
+    # Reset UFW to default state
+    sudo ufw --force reset
+    
     info "Configuring UFW default policies..."
     # Set default policies
     sudo ufw default deny incoming
@@ -517,9 +530,29 @@ configure_firewall() {
     sudo ufw allow from 192.168.1.0/24 comment 'Mining Network'
     
     info "Enabling UFW..."
-    # Enable firewall with default configuration
+    # Disable and re-enable UFW to ensure clean state
+    sudo ufw disable || true
+    sleep 2
+    sudo ufw --force enable
+    sleep 2
+    
+    # Reload UFW to ensure all rules are applied
+    info "Reloading UFW rules..."
+    sudo ufw reload
+    
+    # Force UFW to start on boot
+    sudo systemctl enable ufw
+    sudo systemctl start ufw
+    
+    # Double check UFW is running
     if ! sudo ufw status | grep -q "Status: active"; then
-        sudo ufw --force enable
+        error "Failed to enable UFW. Trying alternative method..."
+        sudo systemctl restart ufw
+        sleep 2
+        if ! sudo ufw status | grep -q "Status: active"; then
+            error "UFW failed to start after multiple attempts"
+            exit 1
+        fi
     fi
     
     # Verify firewall configuration
@@ -529,6 +562,24 @@ configure_firewall() {
 verify_firewall_config() {
     info "Verifying firewall configuration..."
     local config_errors=0
+    
+    # Check if UFW is installed
+    if ! command -v ufw >/dev/null 2>&1; then
+        error "UFW is not installed"
+        ((config_errors++))
+        return 1
+    fi
+    
+    # Check if UFW service is enabled and running
+    if ! systemctl is-enabled --quiet ufw; then
+        error "UFW service is not enabled"
+        ((config_errors++))
+    fi
+    
+    if ! systemctl is-active --quiet ufw; then
+        error "UFW service is not running"
+        ((config_errors++))
+    fi
     
     # Check if UFW is active
     if ! sudo ufw status | grep -q "Status: active"; then
