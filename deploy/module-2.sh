@@ -29,62 +29,29 @@ if ! command -v openrgb &> /dev/null; then
     udevadm trigger
 fi
 
-# Add kernel parameters for AMD B650M and XPG devices
-if ! grep -q "pci=nocrs acpi_enforce_resources=lax" /etc/default/grub; then
-    sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT="/GRUB_CMDLINE_LINUX_DEFAULT="pci=nocrs acpi_enforce_resources=lax /' /etc/default/grub
+# Add kernel parameter
+if ! grep -q "acpi_enforce_resources=lax" /etc/default/grub; then
+    sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT="/GRUB_CMDLINE_LINUX_DEFAULT="acpi_enforce_resources=lax /' /etc/default/grub
     update-grub
 fi
 
-# Load all required modules for AMD and XPG devices
-echo "Loading required modules..."
+# Load basic modules
+echo "Loading modules..."
 modprobe i2c_dev
 modprobe i2c_piix4
-modprobe i2c_amd_mp2
-modprobe nvme
-modprobe ee1004    # For XPG RAM
-modprobe i2c_smbus # For XPG devices
 
-# Add modules to load at boot
-cat > /etc/modules-load.d/rgb.conf << EOF
-i2c_dev
-i2c_piix4
-i2c_amd_mp2
-nvme
-ee1004
-i2c_smbus
-EOF
-
-# Set permissions for all device types
-echo "Setting device permissions..."
+# Set permissions
+echo "Setting permissions..."
 chmod 666 /dev/hidraw* 2>/dev/null || true
 chmod 666 /dev/i2c-* 2>/dev/null || true
-chmod 666 /dev/nvme* 2>/dev/null || true
-chown root:plugdev /dev/hidraw* 2>/dev/null || true
-chown root:i2c /dev/i2c-* 2>/dev/null || true
-
-# Add user to required groups
-usermod -a -G plugdev,i2c $SUDO_USER
 
 # Kill any existing OpenRGB processes
 killall openrgb 2>/dev/null || true
 sleep 2
 
-# Try to detect devices
-echo "Detecting devices..."
-openrgb --detect-controllers
-
-echo
 echo "Setting all devices to red..."
-# Try different modes to ensure all devices are set
-openrgb --mode direct --color FF0000 --use-usb
-sleep 1
+openrgb -l
 openrgb --mode direct --color FF0000
-sleep 1
-# Try setting devices individually
-for i in {0..5}; do
-    openrgb -d $i -m direct -c FF0000 2>/dev/null || true
-    sleep 0.5
-done
 
 echo "Done. A reboot is required for kernel parameter changes to take effect."
 echo "Would you like to reboot now? [y/N] "
