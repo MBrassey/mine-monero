@@ -535,22 +535,22 @@ EOF
     # Configure systemd for headless boot
     info "Configuring systemd for headless operation..."
     
-    # Create systemd override for getty
+    # Configure getty with proper security
     sudo mkdir -p /etc/systemd/system/getty@tty1.service.d/
     cat << 'EOF' | sudo tee /etc/systemd/system/getty@tty1.service.d/override.conf > /dev/null
 [Service]
 ExecStart=
-ExecStart=-/sbin/agetty --noclear --keep-baud --skip-login --noissue --autologin ubuntu - 115200,38400,9600 $TERM
+ExecStart=-/sbin/agetty --noclear --keep-baud - 115200,38400,9600 $TERM
 Type=idle
 EOF
 
-    # Enable and configure serial console
+    # Configure serial console with proper security
     sudo systemctl enable serial-getty@ttyS0.service
     sudo mkdir -p /etc/systemd/system/serial-getty@ttyS0.service.d/
     cat << 'EOF' | sudo tee /etc/systemd/system/serial-getty@ttyS0.service.d/override.conf > /dev/null
 [Service]
 ExecStart=
-ExecStart=-/sbin/agetty --noclear --keep-baud --skip-login --noissue --autologin ubuntu - 115200,38400,9600 $TERM
+ExecStart=-/sbin/agetty --noclear --keep-baud - 115200,38400,9600 $TERM
 Type=idle
 EOF
     
@@ -653,6 +653,9 @@ lsmod | grep -E "drm|nvidia|amdgpu|radeon|nouveau|i915"
 echo
 echo "Active TTY Services:"
 systemctl status getty@tty1.service serial-getty@ttyS0.service | grep Active
+echo
+echo "Security Check:"
+echo "Auto-login disabled: $(! grep -r "autologin" /etc/systemd/system/ && echo "Yes" || echo "No")"
 EOF
     sudo chmod +x /usr/local/bin/check-headless
 
@@ -661,6 +664,12 @@ EOF
     info "Available recovery commands:"
     info "  - check-headless : Check headless configuration status"
     info "  - emergency-video : Restore video output if needed"
+    
+    # Verify no auto-login is configured
+    if grep -r "autologin" /etc/systemd/system/; then
+        error "Auto-login configuration detected! This is a security risk."
+        exit 1
+    fi
 }
 
 verify_firewall_config() {
