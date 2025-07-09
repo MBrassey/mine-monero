@@ -1148,6 +1148,16 @@ configure_headless_boot() {
     # Update GRUB
     sudo update-grub
     
+    # Create udev rule to handle simpledrm module
+    info "Creating udev rule to handle simpledrm module..."
+    cat << 'EOF' | sudo tee /etc/udev/rules.d/71-disable-simpledrm.rules
+# Disable simpledrm framebuffer to prevent boot issues
+ACTION=="add", SUBSYSTEM=="module", KERNEL=="simpledrm", RUN+="/bin/rm -f /dev/dri/card0"
+EOF
+
+    # Reload udev rules
+    sudo udevadm control --reload-rules
+    
     # Enable serial console
     sudo systemctl enable serial-getty@ttyS0.service
     
