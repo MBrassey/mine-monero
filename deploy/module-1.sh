@@ -511,165 +511,47 @@ configure_headless_boot() {
         sudo cp /etc/default/grub /etc/default/grub.backup
         info "GRUB config backed up"
     fi
-    
-    # Configure GRUB for maximum compatibility
-    info "Configuring GRUB for headless operation..."
-    
-    # Create a complete GRUB configuration from scratch to avoid any existing issues
-    cat << 'EOF' | sudo tee /etc/default/grub > /dev/null
-GRUB_DEFAULT=0
-GRUB_TIMEOUT=5
-GRUB_DISTRIBUTOR=`lsb_release -i -s 2> /dev/null || echo Ubuntu`
-GRUB_CMDLINE_LINUX_DEFAULT="console=tty1 console=ttyS0,115200n8 nomodeset nofb video=vesafb:off nouveau.modeset=0"
-GRUB_CMDLINE_LINUX="console=tty1 console=ttyS0,115200n8 nomodeset nofb video=vesafb:off nouveau.modeset=0"
-GRUB_TERMINAL=console
-GRUB_DISABLE_OS_PROBER=true
-GRUB_DISABLE_RECOVERY=true
-GRUB_DISABLE_SUBMENU=true
-EOF
 
+    # Configure GRUB - ONLY the essential parameters needed
+    info "Configuring GRUB for headless operation..."
+    sudo sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="console=tty1 console=ttyS0,115200n8"/' /etc/default/grub
+    sudo sed -i 's/^GRUB_CMDLINE_LINUX=.*/GRUB_CMDLINE_LINUX="console=tty1 console=ttyS0,115200n8"/' /etc/default/grub
+    
     # Update GRUB
     info "Updating GRUB configuration..."
     sudo update-grub
 
-    # Configure systemd for headless boot
-    info "Configuring systemd for headless operation..."
-    
-    # Configure getty with proper security
-    sudo mkdir -p /etc/systemd/system/getty@tty1.service.d/
-    cat << 'EOF' | sudo tee /etc/systemd/system/getty@tty1.service.d/override.conf > /dev/null
-[Service]
-ExecStart=
-ExecStart=-/sbin/agetty --noclear --keep-baud - 115200,38400,9600 $TERM
-Type=idle
-EOF
-
-    # Configure serial console with proper security
-    sudo systemctl enable serial-getty@ttyS0.service
-    sudo mkdir -p /etc/systemd/system/serial-getty@ttyS0.service.d/
-    cat << 'EOF' | sudo tee /etc/systemd/system/serial-getty@ttyS0.service.d/override.conf > /dev/null
-[Service]
-ExecStart=
-ExecStart=-/sbin/agetty --noclear --keep-baud - 115200,38400,9600 $TERM
-Type=idle
-EOF
-    
-    # Set default target to multi-user (non-graphical)
+    # Set multi-user target (non-graphical)
     sudo systemctl set-default multi-user.target
     
-    # Disable ALL graphical targets and services
-    local services_to_mask=(
-        "plymouth.service"
-        "plymouth-quit.service"
-        "plymouth-quit-wait.service"
-        "plymouth-start.service"
-        "plymouth-read-write.service"
-        "gdm.service"
-        "gdm3.service"
-        "lightdm.service"
-        "sddm.service"
-    )
+    # Enable serial console
+    sudo systemctl enable serial-getty@ttyS0.service
     
-    for service in "${services_to_mask[@]}"; do
-        sudo systemctl mask "$service" 2>/dev/null || true
-    done
+    # Remove Plymouth (Ubuntu's boot splash system)
+    info "Removing Plymouth..."
+    sudo apt-get remove -y plymouth plymouth-theme-ubuntu-text
     
-    # Create comprehensive udev rules for video handling
-    cat << 'EOF' | sudo tee /etc/udev/rules.d/99-headless-video.rules > /dev/null
-# Handle all video-related devices
-ACTION=="add|remove", SUBSYSTEM=="pci", ATTR{class}=="0x030000", RUN+="/bin/systemctl try-restart systemd-udevd.service"
-ACTION=="add|remove", SUBSYSTEM=="drm", RUN+="/bin/systemctl try-restart systemd-udevd.service"
-ACTION=="add|remove", SUBSYSTEM=="graphics", RUN+="/bin/systemctl try-restart systemd-udevd.service"
-
-# Force console mode for framebuffer devices
-ACTION=="add", SUBSYSTEM=="graphics", KERNEL=="fb[0-9]*", RUN+="/bin/echo 0 > /sys/class/graphics/%k/blank"
-
-# Disable GPU power management
-ACTION=="add", SUBSYSTEM=="pci", ATTR{class}=="0x030000", RUN+="/bin/echo 'auto' > /sys/class/drm/card%n/device/power_dpm_state"
+    # Prevent Plymouth from being reinstalled
+    cat << 'EOF' | sudo tee /etc/apt/preferences.d/plymouth > /dev/null
+Package: plymouth*
+Pin: release *
+Pin-Priority: -1
 EOF
 
-    # Configure kernel modules for headless operation
-    cat << 'EOF' | sudo tee /etc/modprobe.d/headless.conf > /dev/null
-# Disable ALL framebuffer and GPU-related modules
-blacklist bochs-drm
-blacklist simpledrm
-blacklist ast
-blacklist mgag200
-blacklist drm
-blacklist drm_kms_helper
-blacklist i915
-blacklist nouveau
-blacklist radeon
-blacklist amdgpu
-blacklist nvidia
-blacklist vesafb
-blacklist uvesafb
-blacklist efifb
-EOF
-
-    # Create kernel parameters file
-    cat << 'EOF' | sudo tee /etc/sysctl.d/10-headless.conf > /dev/null
-# Disable GPU-related kernel features
-dev.tty.ldisc_autoload = 0
-kernel.printk = 3 4 1 3
-EOF
-
-    # Update initramfs with new configuration
-    info "Updating initramfs..."
-    sudo update-initramfs -u -k all
-
-    # Create emergency recovery scripts
-    info "Creating emergency recovery scripts..."
-    
-    # Script to restore video output
+    # Create emergency recovery script
+    info "Creating emergency recovery script..."
     cat << 'EOF' | sudo tee /usr/local/bin/emergency-video > /dev/null
 #!/bin/bash
 # Emergency script to restore video output if needed
-sudo sed -i 's/nomodeset nofb video=vesafb:off nouveau.modeset=0//' /etc/default/grub
-sudo sed -i 's/GRUB_TERMINAL=console/#GRUB_TERMINAL=console/' /etc/default/grub
+sudo sed -i 's/console=tty1 console=ttyS0,115200n8/quiet splash/' /etc/default/grub
 sudo update-grub
-sudo update-initramfs -u -k all
 echo "Video mode restored. Please reboot."
 EOF
     sudo chmod +x /usr/local/bin/emergency-video
-    
-    # Script to check headless status
-    cat << 'EOF' | sudo tee /usr/local/bin/check-headless > /dev/null
-#!/bin/bash
-# Check headless configuration status
-
-echo "=== Headless Configuration Check ==="
-echo "GRUB Configuration:"
-grep -E "console=|nomodeset" /etc/default/grub
-echo
-echo "Systemd Default Target:"
-systemctl get-default
-echo
-echo "Masked Services:"
-systemctl list-unit-files | grep masked | grep -E "plymouth|gdm|lightdm|sddm"
-echo
-echo "Loaded GPU Modules:"
-lsmod | grep -E "drm|nvidia|amdgpu|radeon|nouveau|i915"
-echo
-echo "Active TTY Services:"
-systemctl status getty@tty1.service serial-getty@ttyS0.service | grep Active
-echo
-echo "Security Check:"
-echo "Auto-login disabled: $(! grep -r "autologin" /etc/systemd/system/ && echo "Yes" || echo "No")"
-EOF
-    sudo chmod +x /usr/local/bin/check-headless
 
     success "Flexible boot mode configured"
     info "System will now work with or without video card"
-    info "Available recovery commands:"
-    info "  - check-headless : Check headless configuration status"
-    info "  - emergency-video : Restore video output if needed"
-    
-    # Verify no auto-login is configured
-    if grep -r "autologin" /etc/systemd/system/; then
-        error "Auto-login configuration detected! This is a security risk."
-        exit 1
-    fi
+    info "If video output is needed later, run: emergency-video"
 }
 
 verify_firewall_config() {
@@ -1140,6 +1022,162 @@ EOF
     sudo systemctl enable thermal-monitor.service
     
     success "Thermal monitoring configured"
+}
+
+configure_firewall() {
+    section "Configuring Firewall"
+    
+    info "Step 1/8: Checking UFW installation..."
+    if ! command -v ufw >/dev/null 2>&1; then
+        warning "UFW not found - installing now..."
+        if ! sudo apt install -y ufw; then
+            error "Failed to install UFW package"
+            error "Command failed: sudo apt install -y ufw"
+            exit 1
+        fi
+        success "UFW installed successfully"
+    else
+        success "UFW is already installed"
+    fi
+    
+    info "Step 2/8: Ensuring UFW service is enabled..."
+    if ! systemctl is-enabled --quiet ufw; then
+        info "  • Enabling UFW service..."
+        if ! sudo systemctl enable ufw; then
+            error "Failed to enable UFW service"
+            exit 1
+        fi
+        success "UFW service enabled"
+    else
+        success "UFW service already enabled"
+    fi
+    
+    info "Step 3/8: Starting UFW service..."
+    if ! systemctl is-active --quiet ufw; then
+        info "  • Starting UFW service..."
+        if ! sudo systemctl start ufw; then
+            error "Failed to start UFW service"
+            exit 1
+        fi
+        success "UFW service started"
+    else
+        success "UFW service already running"
+    fi
+    
+    info "Step 4/8: Enabling UFW..."
+    if ! sudo ufw --force enable; then
+        error "Failed to enable UFW"
+        error "Command failed: sudo ufw --force enable"
+        exit 1
+    fi
+    success "UFW enabled successfully"
+    
+    info "Step 5/8: Resetting UFW to clean state..."
+    if ! sudo ufw --force reset; then
+        error "Failed to reset UFW"
+        error "Command failed: sudo ufw --force reset"
+        exit 1
+    fi
+    success "UFW reset successfully"
+    
+    # Re-enable after reset
+    if ! sudo ufw --force enable; then
+        error "Failed to re-enable UFW after reset"
+        exit 1
+    fi
+    success "UFW re-enabled after reset"
+    
+    info "Step 6/8: Setting default policies..."
+    info "  • Setting default deny incoming..."
+    if ! sudo ufw default deny incoming; then
+        error "Failed to set default incoming policy"
+        exit 1
+    fi
+    success "Default incoming policy set to deny"
+    
+    info "  • Setting default allow outgoing..."
+    if ! sudo ufw default allow outgoing; then
+        error "Failed to set default outgoing policy"
+        exit 1
+    fi
+    success "Default outgoing policy set to allow"
+    
+    # Force UFW to reload policies
+    info "  • Reloading UFW..."
+    if ! sudo ufw reload; then
+        error "Failed to reload UFW"
+        exit 1
+    fi
+    sleep 2
+    
+    # Verify default policies were set
+    info "  • Verifying policies..."
+    local verbose_status=$(sudo ufw status verbose)
+    
+    # Check incoming policy
+    if ! echo "$verbose_status" | grep -q "deny (incoming)"; then
+        error "Failed to set default incoming policy"
+        error "Current UFW status:"
+        echo "$verbose_status"
+        exit 1
+    fi
+    success "Default incoming policy verified"
+    
+    # Check outgoing policy
+    if ! echo "$verbose_status" | grep -q "allow (outgoing)"; then
+        error "Failed to set default outgoing policy"
+        error "Current UFW status:"
+        echo "$verbose_status"
+        exit 1
+    fi
+    success "Default outgoing policy verified"
+    
+    success "Default policies configured and verified"
+    
+    info "Step 7/8: Configuring firewall rules..."
+    
+    # Array of rules to add
+    declare -A firewall_rules=(
+        ["SSH Access"]="allow ssh"
+        ["P2Pool Stratum"]="allow 3333/tcp"
+        ["P2Pool P2P"]="allow 37889/tcp"
+        ["P2Pool Mini P2P"]="allow 37888/tcp"
+        ["Monero P2P"]="allow 18080/tcp"
+        ["Monero RPC"]="allow 18081/tcp"
+        ["XMRig API"]="allow 18088/tcp"
+        ["XMRig Exporter"]="allow 9100/tcp"
+        ["Node Exporter"]="allow 9101/tcp"
+        ["Mining Network"]="allow from 192.168.1.0/24"
+    )
+    
+    # Add each rule and log the result
+    for desc in "${!firewall_rules[@]}"; do
+        rule="${firewall_rules[$desc]}"
+        info "  • Adding rule: $desc"
+        if ! sudo ufw $rule comment "$desc"; then
+            error "    ✗ Failed to add rule: $desc"
+            error "    Command failed: sudo ufw $rule"
+            exit 1
+        fi
+        success "    ✓ Rule added: $desc"
+    done
+    
+    info "Step 8/8: Final verification..."
+    if ! sudo ufw status | grep -q "Status: active"; then
+        error "UFW is not active after configuration"
+        error "Current UFW status:"
+        sudo ufw status verbose
+        error "Current UFW service status:"
+        sudo systemctl status ufw
+        exit 1
+    fi
+    
+    success "Firewall enabled and configured successfully"
+    info "Current UFW status:"
+    sudo ufw status numbered
+    
+    # Verify final configuration
+    verify_firewall_config
 }
 
 prepare_for_module2() {
