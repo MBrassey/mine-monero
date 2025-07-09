@@ -228,15 +228,13 @@ install_essential_tools() {
         exit 1
     fi
     
-    for package in "${base_packages[@]}"; do
-        if ! dpkg -l | grep -q "^ii.*$package"; then
-            info "Installing $package..."
-            if ! sudo apt install -y "$package"; then
-                error "Failed to install base package: $package"
-                exit 1
-            fi
-        fi
-    done
+    # Install base packages
+    info "Installing base packages..."
+    if ! sudo apt install -y "${base_packages[@]}"; then
+        error "Failed to install base packages"
+        exit 1
+    fi
+    success "Base packages installed successfully"
     
     # Define essential packages in order of importance
     local essential_packages=(
@@ -279,24 +277,10 @@ install_essential_tools() {
     
     info "Installing ${#essential_packages[@]} essential packages..."
     
-    # Install packages in groups to handle dependencies better
-    local current_group=()
-    local group_size=5
-    local i=0
-    
-    for package in "${essential_packages[@]}"; do
-        current_group+=("$package")
-        ((i++))
-        
-        if [[ ${#current_group[@]} -eq $group_size ]] || [[ $i -eq ${#essential_packages[@]} ]]; then
-            info "Installing package group: ${current_group[*]}"
-            if ! sudo apt install -y "${current_group[@]}"; then
-                warning "Some packages in group failed to install: ${current_group[*]}"
-                # Continue anyway as these are non-critical
-            fi
-            current_group=()
-        fi
-    done
+    # Install all packages at once instead of in groups
+    if ! sudo DEBIAN_FRONTEND=noninteractive apt install -y "${essential_packages[@]}"; then
+        warning "Some packages may have failed to install. Continuing anyway..."
+    fi
     
     # Verify critical tools are installed
     local critical_tools=("gcc" "make" "git" "curl" "wget")
