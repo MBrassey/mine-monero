@@ -12,7 +12,7 @@ if ! command -v openrgb &> /dev/null; then
     
     # Install build dependencies
     DEBIAN_FRONTEND=noninteractive apt-get update
-    DEBIAN_FRONTEND=noninteractive apt-get install -y git build-essential qtbase5-dev libusb-1.0-0-dev libhidapi-dev pkgconf cmake qt5-qmake
+    DEBIAN_FRONTEND=noninteractive apt-get install -y git build-essential qtbase5-dev libusb-1.0-0-dev libhidapi-dev pkgconf cmake qt5-qmake i2c-tools
 
     # Build from source
     cd /tmp
@@ -34,6 +34,15 @@ if ! command -v openrgb &> /dev/null; then
         exit 1
     fi
 fi
+
+# Load required modules
+modprobe i2c-dev
+modprobe i2c-piix4
+modprobe i2c-nct6775
+
+# Set permissions
+chmod 777 /dev/i2c-* 2>/dev/null || true
+chmod 777 /dev/hidraw* 2>/dev/null || true
 
 # Kill any existing OpenRGB processes
 killall openrgb 2>/dev/null || true
