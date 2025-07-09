@@ -43,8 +43,8 @@ apt install -y \
     libqt6core6 \
     libqt6gui6 \
     libqt6widgets6 \
-    cmake \
-    ninja-build
+    qt6-qmake \
+    qt6-base-dev-tools
 
 # Load required kernel modules
 log "Loading kernel modules..."
@@ -89,13 +89,16 @@ rm -rf OpenRGB
 git clone https://gitlab.com/CalcProgrammer1/OpenRGB
 cd OpenRGB
 
-# Build with CMake (Qt6)
+# Build with Qt6 qmake
 log "Building OpenRGB..."
-mkdir -p build
-cd build
-cmake .. -GNinja -DCMAKE_BUILD_TYPE=Release
-ninja
-ninja install
+/usr/lib/qt6/bin/qmake OpenRGB.pro
+make -j$(nproc)
+
+# Install OpenRGB
+log "Installing OpenRGB..."
+mkdir -p /usr/local/bin
+cp openrgb /usr/local/bin/
+chmod +x /usr/local/bin/openrgb
 
 # Create OpenRGB systemd service
 log "Creating OpenRGB service..."
@@ -119,12 +122,16 @@ systemctl daemon-reload
 systemctl enable openrgb
 systemctl start openrgb
 
-# Wait for OpenRGB to start
-sleep 5
+# Wait for OpenRGB to start and initialize
+log "Waiting for OpenRGB to initialize..."
+sleep 10
 
 # Set all devices to target color
 log "Setting all devices to target color..."
-openrgb --noautoconnect --brightness 100 --color ${TARGET_COLOR}
+if ! /usr/local/bin/openrgb --noautoconnect --brightness 100 --color ${TARGET_COLOR}; then
+    error "Failed to set RGB color. This might be normal on first boot."
+    echo "Please reboot the system and the RGB settings will be applied."
+fi
 
 log "RGB configuration complete!"
 echo
@@ -135,3 +142,10 @@ echo "If you want to change the color in the future, you can:"
 echo "1. Edit TARGET_COLOR in this script and run it again"
 echo "2. Use the command: openrgb --color RRGGBB"
 echo "   Example: openrgb --color FF0000 (for red)"
+echo
+echo "NOTE: A reboot is recommended for all changes to take effect."
+echo "Would you like to reboot now? [y/N] "
+read -r response
+if [[ "$response" =~ ^[Yy]$ ]]; then
+    reboot
+fi
