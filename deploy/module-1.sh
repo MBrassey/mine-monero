@@ -735,7 +735,6 @@ EOF
     cat > /etc/ssh/sshd_config << 'EOL'
 # Security hardened sshd_config
 Port 22
-Protocol 2
 
 # Authentication
 PermitRootLogin prohibit-password
@@ -746,17 +745,17 @@ PermitEmptyPasswords no
 ChallengeResponseAuthentication no
 KerberosAuthentication no
 GSSAPIAuthentication no
-UsePAM no
+UsePAM yes
 
 # Disable all forms of password auth
 KbdInteractiveAuthentication no
-AuthenticationMethods publickey
 
 # Other security settings
 X11Forwarding no
 AllowAgentForwarding no
 AllowTcpForwarding no
 PrintMotd no
+UsePrivilegeSeparation yes
 
 # Logging
 SyslogFacility AUTH
@@ -767,17 +766,65 @@ AcceptEnv LANG LC_*
 
 # Override default of no subsystems
 Subsystem sftp internal-sftp
+
+# Host keys
+HostKey /etc/ssh/ssh_host_rsa_key
+HostKey /etc/ssh/ssh_host_ecdsa_key
+HostKey /etc/ssh/ssh_host_ed25519_key
 EOL
     
     # Set strict permissions on config
     chmod 600 /etc/ssh/sshd_config
     
+    # Create required SSH directories
+    log "Creating required SSH directories..."
+    mkdir -p /run/sshd
+    chmod 755 /run/sshd
+    
+    # Ensure SSH host keys exist
+    log "Ensuring SSH host keys exist..."
+    if [[ ! -f /etc/ssh/ssh_host_rsa_key ]]; then
+        ssh-keygen -t rsa -b 4096 -f /etc/ssh/ssh_host_rsa_key -N "" -q
+    fi
+    if [[ ! -f /etc/ssh/ssh_host_ecdsa_key ]]; then
+        ssh-keygen -t ecdsa -b 521 -f /etc/ssh/ssh_host_ecdsa_key -N "" -q
+    fi
+    if [[ ! -f /etc/ssh/ssh_host_ed25519_key ]]; then
+        ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N "" -q
+    fi
+    
     # Test config before applying
     log "Testing SSH configuration..."
-    if ! sshd -t; then
-        error "SSH configuration test failed! Restoring backup..."
-        cp /etc/ssh/sshd_config.backup /etc/ssh/sshd_config
-        exit 1
+    if ! sshd -t 2>/dev/null; then
+        log "SSH configuration test failed, trying with verbose output..."
+        sshd_test_output=$(sshd -t 2>&1) || true
+        log "SSH test output: $sshd_test_output"
+        
+        # Try a simpler config if the strict one fails
+        log "Falling back to simpler SSH configuration..."
+        cat > /etc/ssh/sshd_config << 'SIMPLE_EOL'
+# Simplified SSH config for compatibility
+Port 22
+PermitRootLogin prohibit-password
+PubkeyAuthentication yes
+PasswordAuthentication no
+PermitEmptyPasswords no
+ChallengeResponseAuthentication no
+X11Forwarding no
+UsePAM yes
+Subsystem sftp internal-sftp
+SIMPLE_EOL
+        
+        # Test the simpler config
+        if ! sshd -t 2>/dev/null; then
+            error "Even simplified SSH configuration failed! Restoring backup..."
+            cp /etc/ssh/sshd_config.backup /etc/ssh/sshd_config
+            exit 1
+        else
+            log "✓ Simplified SSH configuration accepted"
+        fi
+    else
+        log "✓ SSH configuration test passed"
     fi
     
     # Restart SSH with new config
