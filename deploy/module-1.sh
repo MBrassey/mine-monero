@@ -346,11 +346,8 @@ setup_node_exporter() {
     
     # Download with proper filename and handle errors
     log "Downloading Node Exporter ${LATEST_VERSION}..."
-    if ! wget -q --show-progress --progress=bar:force:noscroll \
-        -O "node_exporter-${LATEST_VERSION}.linux-amd64.tar.gz" \
-        "https://github.com/prometheus/node_exporter/releases/download/v${LATEST_VERSION}/node_exporter-${LATEST_VERSION}.linux-amd64.tar.gz" 2>&1; then
-        error "Failed to download Node Exporter"
-    fi
+    wget -q -O "node_exporter-${LATEST_VERSION}.linux-amd64.tar.gz" \
+        "https://github.com/prometheus/node_exporter/releases/download/v${LATEST_VERSION}/node_exporter-${LATEST_VERSION}.linux-amd64.tar.gz" || error "Failed to download Node Exporter"
     
     # Extract silently
     if ! tar xzf "node_exporter-${LATEST_VERSION}.linux-amd64.tar.gz" 2>/dev/null; then
@@ -485,22 +482,18 @@ ExecStart=/usr/local/bin/system-metrics.sh
 WantedBy=multi-user.target
 EOF
 
-    # Reload systemd and start services silently
-    systemctl daemon-reload 2>/dev/null
+    # Reload systemd and start services
+    systemctl daemon-reload
     
-    # Enable and start services silently
-    systemctl enable --quiet node_exporter 2>/dev/null
-    systemctl restart node_exporter 2>/dev/null
-    systemctl enable --quiet system-metrics.timer 2>/dev/null
-    systemctl restart system-metrics.timer 2>/dev/null
+    # Enable and start services
+    systemctl enable node_exporter || error "Failed to enable Node Exporter"
+    systemctl start node_exporter || error "Failed to start Node Exporter"
+    systemctl enable system-metrics.timer || error "Failed to enable system metrics timer"
+    systemctl start system-metrics.timer || error "Failed to start system metrics timer"
     
     # Verify services are running
-    if ! systemctl is-active --quiet node_exporter; then
-        error "Node Exporter failed to start"
-    fi
-    if ! systemctl is-active --quiet system-metrics.timer; then
-        error "System metrics timer failed to start"
-    fi
+    systemctl is-active --quiet node_exporter || error "Node Exporter failed to start"
+    systemctl is-active --quiet system-metrics.timer || error "System metrics timer failed to start"
     
     log "✓ Node Exporter installed and configured"
     log "✓ System metrics collector configured"
