@@ -25,6 +25,8 @@ cleanup_previous_state() {
             log "Disabling $service service..."
             systemctl disable "$service" 2>/dev/null || true
         fi
+        log "Unmasking $service service..."
+        systemctl unmask "$service" 2>/dev/null || true
     done
     
     local service_files=(
@@ -67,7 +69,9 @@ cleanup_previous_state() {
         fi
     done
     
+    log "Resetting systemd state..."
     systemctl daemon-reload
+    systemctl reset-failed 2>/dev/null || true
     
     log "✓ Previous configurations cleaned up"
 }
@@ -275,6 +279,25 @@ setup_firewall() {
 setup_node_exporter() {
     log "==> Setting up Node Exporter..."
     
+    log "Ensuring clean Node Exporter state..."
+    systemctl stop node_exporter 2>/dev/null || true
+    systemctl disable node_exporter 2>/dev/null || true
+    systemctl unmask node_exporter 2>/dev/null || true
+    systemctl stop system-metrics.timer 2>/dev/null || true
+    systemctl disable system-metrics.timer 2>/dev/null || true
+    systemctl unmask system-metrics.timer 2>/dev/null || true
+    systemctl unmask system-metrics.service 2>/dev/null || true
+    rm -f /etc/systemd/system/node_exporter.service 2>/dev/null || true
+    rm -f /etc/systemd/system/system-metrics.service 2>/dev/null || true
+    rm -f /etc/systemd/system/system-metrics.timer 2>/dev/null || true
+    systemctl daemon-reload
+    systemctl reset-failed 2>/dev/null || true
+    
+    log "Cleaning up existing Node Exporter files..."
+    rm -f /usr/local/bin/node_exporter 2>/dev/null || true
+    rm -f /usr/local/bin/system-metrics.sh 2>/dev/null || true
+    rm -rf /var/lib/node_exporter 2>/dev/null || true
+    
     if ! id -u nodeusr &>/dev/null; then
         useradd -rs /bin/false nodeusr 2>/dev/null
     fi
@@ -298,8 +321,6 @@ setup_node_exporter() {
     if ! tar xzf "node_exporter-${LATEST_VERSION}.linux-amd64.tar.gz" 2>/dev/null; then
         error "Failed to extract Node Exporter"
     fi
-    
-    rm -f "/usr/local/bin/node_exporter" 2>/dev/null || true
     
     if ! cp "node_exporter-${LATEST_VERSION}.linux-amd64/node_exporter" /usr/local/bin/ 2>/dev/null; then
         error "Failed to install Node Exporter binary"
@@ -417,8 +438,20 @@ EOF
 
     systemctl daemon-reload
     
-    systemctl enable node_exporter || error "Failed to enable Node Exporter"
-    systemctl start node_exporter || error "Failed to start Node Exporter"
+    log "Enabling and starting Node Exporter..."
+    if ! systemctl enable node_exporter; then
+        log "Node Exporter enable failed - checking service state..."
+        systemctl status node_exporter --no-pager -l || true
+        error "Failed to enable Node Exporter"
+    fi
+    
+    if ! systemctl start node_exporter; then
+        log "Node Exporter start failed - checking service state..."
+        systemctl status node_exporter --no-pager -l || true
+        error "Failed to start Node Exporter"
+    fi
+    
+    log "Enabling and starting system metrics timer..."
     systemctl enable system-metrics.timer || error "Failed to enable system metrics timer"
     systemctl start system-metrics.timer || error "Failed to start system metrics timer"
     
