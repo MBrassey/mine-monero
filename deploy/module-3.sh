@@ -2116,7 +2116,7 @@ for service in node_exporter monerod p2pool xmrig xmrig_exporter; do
     if systemctl is-active --quiet "$service"; then
         log "✓ $service is running"
     else
-        warning "⚠ $service is not running - check logs: sudo journalctl -u $service -n 20"
+        warning ": $service offline - check logs: sudo journalctl -u $service -n 20"
     fi
 done
 
@@ -2156,13 +2156,13 @@ comprehensive_mining_verification() {
     if curl -s --max-time 5 "http://127.0.0.1:18081/get_height" >/dev/null 2>&1; then
         local height_response=$(curl -s --max-time 5 "http://127.0.0.1:18081/get_height" 2>/dev/null)
         if [[ -n "$height_response" ]]; then
-            log "  ✅ Monero RPC responding and operational"
+            log "  : monero rpc operational."
             ((verification_passed++))
         else
-            log "  ❌ Monero RPC not responding properly"
+            log "  : monero rpc failed."
         fi
     else
-        log "  ❌ Monero RPC connection failed"
+        log "  : monero rpc connection failed."
     fi
     
     # 2. Verify P2Pool is connected and functional
@@ -2170,17 +2170,16 @@ comprehensive_mining_verification() {
     ((total_checks++))
     sleep 10  # Give P2Pool time to connect to Monero
     if nc -z 127.0.0.1 3333 2>/dev/null; then
-        log "  ✅ P2Pool stratum port 3333 is listening"
+        log "  : p2pool stratum port active."
         ((verification_passed++))
         
-        # Check P2Pool logs for Monero connection
         if sudo journalctl -u p2pool --no-pager -q --since "1 minute ago" 2>/dev/null | grep -q -E "(connected|height|block)" 2>/dev/null; then
-            log "  ✅ P2Pool is communicating with Monero"
+            log "  : p2pool communicating with monero."
         else
-            log "  ⚠️  P2Pool may still be connecting to Monero"
+            log "  : p2pool connecting to monero."
         fi
     else
-        log "  ❌ P2Pool stratum port 3333 not listening"
+        log "  : p2pool stratum port offline."
     fi
     
     # 3. Verify XMRig is functional and connected
@@ -2188,21 +2187,20 @@ comprehensive_mining_verification() {
     ((total_checks++))
     sleep 5  # Give XMRig time to connect
     if curl -s --max-time 5 "http://127.0.0.1:18088/1/summary" >/dev/null 2>&1; then
-        log "  ✅ XMRig API responding"
+        log "  : xmrig api responding."
         local xmrig_response=$(curl -s --max-time 5 "http://127.0.0.1:18088/1/summary" 2>/dev/null)
         if [[ -n "$xmrig_response" ]]; then
             ((verification_passed++))
             
-            # Check connection to P2Pool
             local pool_status=$(echo "$xmrig_response" | jq -r '.connection.pool // "N/A"' 2>/dev/null)
             if [[ "$pool_status" != "N/A" && "$pool_status" != "null" ]]; then
-                log "  ✅ XMRig connected to pool: $pool_status"
+                log "  : xmrig connected to pool: $pool_status"
             else
-                log "  ⚠️  XMRig not yet connected to P2Pool"
+                log "  : xmrig connecting to p2pool."
             fi
         fi
     else
-        log "  ❌ XMRig API not responding"
+        log "  : xmrig api offline."
     fi
     
     # 4. CRITICAL: Verify 0% donation level is actually active
@@ -2213,7 +2211,7 @@ comprehensive_mining_verification() {
     # Check config file
     if [[ -f "$CONFIG_DIR/config.json" ]]; then
         local config_donation=$(jq -r '.["donate-level"] // 1' "$CONFIG_DIR/config.json" 2>/dev/null)
-        log "  📄 Config file donation level: $config_donation%"
+        log "  : config file donation level: $config_donation%"
     fi
     
     # Check runtime donation level via API (this is the proof)
@@ -2222,28 +2220,28 @@ comprehensive_mining_verification() {
         if [[ -n "$xmrig_response" ]]; then
             local runtime_donation=$(echo "$xmrig_response" | jq -r '.donate_level // 1' 2>/dev/null)
             if [[ "$runtime_donation" = "0" ]]; then
-                log "  ✅ VERIFIED: Runtime donation level is 0%"
+                log "  : verified runtime donation level 0%."
                 donation_verified=true
                 ((verification_passed++))
             else
-                log "  ❌ CRITICAL: Runtime donation level is $runtime_donation% (NOT 0%)"
-                log "  🚨 This means XMRig is donating to developers instead of mining for you!"
+                log "  : critical error - runtime donation level $runtime_donation% (not 0%)."
+                log "  : warning - xmrig donating to developers."
             fi
         fi
     fi
     
     if [[ "$donation_verified" != "true" ]]; then
-        log "  ❌ Could not verify 0% donation level via API"
+        log "  : could not verify 0% donation level."
     fi
     
     # 5. Verify monitoring and metrics
     log "Checking monitoring systems..."
     ((total_checks++))
     if curl -s --max-time 5 "http://127.0.0.1:9101/metrics" | grep -q "node_" 2>/dev/null; then
-        log "  ✅ Node Exporter metrics available"
+        log "  : node exporter metrics available."
         ((verification_passed++))
     else
-        log "  ❌ Node Exporter metrics not available"
+        log "  : node exporter metrics offline."
     fi
     
     # 6. Verify mining readiness
@@ -2252,40 +2250,38 @@ comprehensive_mining_verification() {
     local mining_ready=false
     
     if systemctl is-active --quiet monerod && systemctl is-active --quiet p2pool && systemctl is-active --quiet xmrig; then
-        log "  ✅ All core services running"
+        log "  : all core services running."
         
-        # Check for actual mining activity (hashrate > 0)
         if curl -s --max-time 5 "http://127.0.0.1:18088/1/summary" >/dev/null 2>&1; then
             local xmrig_response=$(curl -s --max-time 5 "http://127.0.0.1:18088/1/summary" 2>/dev/null)
             if [[ -n "$xmrig_response" ]]; then
                 local hashrate=$(echo "$xmrig_response" | jq -r '.hashrate.total[0] // 0' 2>/dev/null)
                 if [[ "$hashrate" != "0" && "$hashrate" != "null" && -n "$hashrate" ]]; then
-                    log "  ✅ MINING ACTIVE: Hashrate ${hashrate} H/s"
+                    log "  : mining active - hashrate ${hashrate} h/s."
                     mining_ready=true
                     ((verification_passed++))
                 else
-                    log "  ⚠️  Mining services ready but no hashrate yet (this is normal initially)"
-                    ((verification_passed++))  # Still count as success since services are ready
+                    log "  : mining services ready - hashrate pending."
+                    ((verification_passed++))
                 fi
             fi
         fi
     else
-        log "  ❌ Not all core services are running"
+        log "  : core services offline."
     fi
     
-    # Summary
     log ""
-    log "📊 VERIFICATION SUMMARY: $verification_passed/$total_checks checks passed"
+    log ": verification summary - $verification_passed/$total_checks checks passed."
     
     if [[ $verification_passed -eq $total_checks ]]; then
-        log "🎉 EXCELLENT: All verification checks passed!"
+        log ": excellent - all verification checks passed."
         return 0
     elif [[ $verification_passed -ge $((total_checks - 1)) ]]; then
-        log "✅ GOOD: Mining setup is functional ($verification_passed/$total_checks)"
+        log ": good - mining setup functional ($verification_passed/$total_checks)."
         return 0
     else
-        log "⚠️  ISSUES DETECTED: Only $verification_passed/$total_checks checks passed"
-        log "❗ Review the failed checks above"
+        log ": issues detected - only $verification_passed/$total_checks checks passed."
+        log ": review failed checks above."
         return 1
     fi
 }
@@ -2299,19 +2295,18 @@ comprehensive_verification_result=$?
 # Additional verification of payment addresses
 log "==> Verifying payment configuration..."
 local config_address=$(jq -r '.user' "$SCRIPT_DIR/config.json" 2>/dev/null)
-if [[ -n "$config_address" && ${#config_address} -eq 95 ]]; then
-    log "✅ Payment address configured: ${config_address:0:10}...${config_address: -10}"
-    
-    # Verify it matches P2Pool if running
-    if systemctl is-active --quiet p2pool; then
-        local p2pool_logs=$(sudo journalctl -u p2pool --no-pager -q --since "5 minutes ago" 2>/dev/null | grep -i wallet | tail -1)
-        if [[ -n "$p2pool_logs" ]]; then
-            log "✅ P2Pool is configured with wallet address"
+    if [[ -n "$config_address" && ${#config_address} -eq 95 ]]; then
+        log ": payment address configured - ${config_address:0:10}...${config_address: -10}"
+        
+        if systemctl is-active --quiet p2pool; then
+            local p2pool_logs=$(sudo journalctl -u p2pool --no-pager -q --since "5 minutes ago" 2>/dev/null | grep -i wallet | tail -1)
+            if [[ -n "$p2pool_logs" ]]; then
+                log ": p2pool configured with wallet address."
+            fi
         fi
+    else
+        log ": invalid payment address configuration."
     fi
-else
-    log "❌ Invalid payment address configuration"
-fi
 
 # Get current hashrate and pool info
 if response=$(curl -s --max-time 10 "http://127.0.0.1:18088/1/summary" 2>/dev/null); then
@@ -2408,20 +2403,20 @@ log "  System Metrics: http://$(hostname -I | awk '{print $1}'):9101/metrics"
 log "  P2Pool Observer: https://p2pool.observer"
 log ""
 # Show actual mining address being used
-log "💰 MINING ADDRESS VERIFICATION:"
+log ": mining address verification."
 local config_address=$(jq -r '.user' "$SCRIPT_DIR/config.json" 2>/dev/null)
 local xmrig_address=$(jq -r '.pools[0].user' "$CONFIG_DIR/config.json" 2>/dev/null)
 
 if [[ -n "$config_address" ]]; then
-    log "  📋 Original Config: ${config_address:0:12}...${config_address: -12}"
+    log "  : original config - ${config_address:0:12}...${config_address: -12}"
     
     if [[ -n "$xmrig_address" && "$xmrig_address" != "null" ]]; then
-        log "  ⛏️  XMRig Config: ${xmrig_address:0:12}...${xmrig_address: -12}"
+        log "  : xmrig config - ${xmrig_address:0:12}...${xmrig_address: -12}"
         
         if [[ "$config_address" == "$xmrig_address" ]]; then
-            log "  ✅ Address Match: Confirmed"
+            log "  : address match confirmed."
         else
-            log "  ❌ Address Mismatch: CRITICAL ERROR!"
+            log "  : address mismatch - critical error."
         fi
     fi
     
@@ -2432,23 +2427,23 @@ if [[ -n "$config_address" ]]; then
             local worker_id=$(echo "$xmrig_response" | jq -r '.worker_id // "N/A"' 2>/dev/null)
             local pool_connection=$(echo "$xmrig_response" | jq -r '.connection.pool // "N/A"' 2>/dev/null)
             if [[ "$worker_id" != "N/A" ]]; then
-                log "  🎯 XMRig Worker: $worker_id"
+                log "  : xmrig worker - $worker_id"
             fi
             if [[ "$pool_connection" != "N/A" ]]; then
-                log "  🔗 Pool Connection: $pool_connection"
+                log "  : pool connection - $pool_connection"
             fi
         fi
     fi
     
     # Show P2Pool verification 
-    log "  📊 Track Mining: https://p2pool.observer"
+    log "  : track mining - https://p2pool.observer"
     log "     Enter your address: $config_address"
 else
-    log "  ❌ Could not determine mining address from config"
+    log "  : could not determine mining address from config."
 fi
 
 log ""
-log "📊 SYNC & STATUS MONITORING:"
+log ": sync and status monitoring."
 log "  Monero sync status: curl -s http://127.0.0.1:18081/get_info | jq '{height, target_height, synchronized}'"
 log "  Monero sync progress: curl -s http://127.0.0.1:18081/get_height | jq"
 log "  P2Pool status: sudo journalctl -u p2pool --no-pager -n 10 | grep -E '(height|connected|shares)'"
@@ -2456,14 +2451,14 @@ log "  P2Pool real-time: sudo journalctl -u p2pool -f"
 log "  XMRig mining status: curl -s http://127.0.0.1:18088/1/summary | jq '{hashrate, connection, uptime}'"
 log "  XMRig real-time logs: sudo journalctl -u xmrig -f"
 log ""
-log "🔧 VERIFICATION COMMANDS:"
+log ": verification commands."
 log "  Check all services: sudo systemctl status monerod p2pool xmrig"
 log "  View complete XMRig status: curl -s http://127.0.0.1:18088/1/summary | jq"
 log "  Verify 0% donation: curl -s http://127.0.0.1:18088/1/summary | jq '.donate_level'"
 log "  Check current hashrate: curl -s http://127.0.0.1:18088/1/summary | jq '.hashrate.total[0]'"
 log "  Restart mining: sudo systemctl restart xmrig"
 log ""
-log "🎯 VERIFY YOUR MINING IS WORKING:"
+log ": verify your mining is working."
 log "  1. Check mining address: cat $CONFIG_DIR/config.json | jq '.pools[0].user'"
 log "     Should show: Your wallet address (where payments go)"
 log "  2. Check hashrate: curl -s http://127.0.0.1:18088/1/summary | jq '.hashrate.total[0]'"
@@ -2475,7 +2470,7 @@ log "     Should show: \"127.0.0.1:3333\" (connected to local P2Pool)"
 log "  5. Verify P2Pool wallet: sudo journalctl -u p2pool --no-pager -n 5 | grep -i wallet"
 log "     Should show: Your wallet address in P2Pool logs"
 log ""
-log "🚀 ONE-COMMAND STATUS CHECK:"
+log ": one-command status check."
 log "  Complete status: curl -s http://127.0.0.1:18088/1/summary | jq '{donate_level, hashrate: .hashrate.total[0], pool: .connection.pool, worker_id, uptime: .connection.uptime}'"
 log "  This shows: donation level, current hashrate, pool connection, worker ID, and uptime"
 if [[ "$ENABLE_WALLET_CONNECTIVITY" == "true" ]]; then
@@ -2513,19 +2508,19 @@ log "  Status: Addresses verified to match during installation"
 log ""
 log "SETUP STATUS:"
 if systemctl is-active --quiet monerod; then
-    log "  ✅ Monero daemon: Running and syncing"
+    log "  : monero daemon - running and syncing."
 else
-    log "  ❌ Monero daemon: Not running"
+    log "  : monero daemon - offline."
 fi
 if systemctl is-active --quiet p2pool; then
-    log "  ✅ P2Pool: Running (will connect once Monero RPC is ready)"
+    log "  : p2pool - running (will connect once monero rpc ready)."
 else
-    log "  ❌ P2Pool: Not running"  
+    log "  : p2pool - offline."  
 fi
 if systemctl is-active --quiet xmrig; then
-    log "  ✅ XMRig: Running (will mine once P2Pool is ready)"
+    log "  : xmrig - running (will mine once p2pool ready)."
 else
-    log "  ❌ XMRig: Not running"
+    log "  : xmrig - offline."
 fi
 log ""
 log "Expected Timeline:"
@@ -2574,31 +2569,31 @@ if systemctl is-active --quiet xmrig; then ((services_running++)); fi
 # Determine final setup status based on comprehensive verification
 if [[ $comprehensive_verification_result -eq 0 ]]; then
     if [[ $services_running -eq $total_services ]]; then
-        log ""
-        log "🎉 SUCCESS: Monero mining setup is FULLY OPERATIONAL!"
-        log "✅ All services verified and working correctly"
-        log "✅ 0% donation level confirmed"
-        log "✅ Ready to mine Monero to your wallet"
+log ""
+        log ": success - monero mining setup fully operational."
+        log ": all services verified and working correctly."
+        log ": 0% donation level confirmed."
+        log ": ready to mine monero to your wallet."
     else
         log ""
-        log "✅ GOOD: Core functionality verified ($services_running/$total_services services)"
-        log "⚠️  Some services may still be starting up"
+        log ": good - core functionality verified ($services_running/$total_services services)."
+        log ": some services may still be starting up."
     fi
 else
     log ""
-    log "⚠️  SETUP COMPLETED WITH ISSUES"
-    log "❗ Some verification checks failed - review output above"
-    log "❗ Mining may not work optimally until issues are resolved"
+    log ": setup completed with issues."
+    log ": some verification checks failed - review output above."
+    log ": mining may not work optimally until issues are resolved."
 fi
 
 log ""
-log "📊 FINAL STATUS SUMMARY:"
+log ": final status summary."
 log "  Services Running: $services_running/$total_services"
 if [[ $comprehensive_verification_result -eq 0 ]]; then
-    log "  Verification: ✅ PASSED"
-    log "  Donation Level: ✅ 0% CONFIRMED"
-    log "  Status: 🟢 READY TO MINE"
+    log "  Verification: passed"
+    log "  Donation Level: 0% confirmed"
+    log "  Status: ready to mine"
 else
-    log "  Verification: ❌ ISSUES DETECTED"
-    log "  Status: 🟡 NEEDS ATTENTION"
+    log "  Verification: issues detected"
+    log "  Status: needs attention"
 fi
