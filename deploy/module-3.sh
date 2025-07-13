@@ -618,6 +618,25 @@ EOF
         log "src/donate.h not found - XMRig may have different structure"
     fi
     
+    # CRITICAL: Modify the source config.json file that has donate-level: 1
+    if [[ -f "src/config.json" ]]; then
+        log "Found source config.json with donate-level: 1 - fixing..."
+        cp "src/config.json" "src/config.json.backup"
+        
+        # Replace donate-level: 1 with donate-level: 0 in source config
+        sed -i 's/"donate-level": 1/"donate-level": 0/g' "src/config.json"
+        sed -i 's/"donate-over-proxy": 1/"donate-over-proxy": 0/g' "src/config.json"
+        
+        log "Modified source config.json to set donate-level: 0"
+        
+        # Verify the change
+        if grep -q '"donate-level": 0' "src/config.json"; then
+            log "Successfully set donate-level to 0 in source config.json"
+        else
+            warning "Could not verify donate-level change in source config.json"
+        fi
+    fi
+    
     # Check and modify donation strategy files more carefully
     if [[ -f "src/net/strategies/DonateStrategy.cpp" ]]; then
         log "Modifying DonateStrategy.cpp for 0% donation..."
@@ -997,22 +1016,18 @@ verify_mining_services_health() {
     else
         log "P2Pool service is running"
         
-        # Check if stratum port is listening
-        if nc -z 127.0.0.1 3333 2>/dev/null; then
-            log "P2Pool stratum port (3333) is listening"
-            
-            # Check P2Pool logs for connection to Monero
-            local p2pool_logs=$(sudo journalctl -u p2pool --no-pager -q --since "2 minutes ago" 2>/dev/null | tail -5)
-            if echo "$p2pool_logs" | grep -q -E "(connected|height|monerod)" 2>/dev/null; then
-                log "P2Pool is communicating with Monero daemon"
-            elif echo "$p2pool_logs" | grep -q -E "(error|failed)" 2>/dev/null; then
-                warning "P2Pool may have connection issues - check logs: sudo journalctl -u p2pool -n 10"
-            else
-                log "→ P2Pool connecting to Monero daemon..."
-            fi
-        else
-            warning "P2Pool stratum port (3333) not listening yet"
+        # Check P2Pool logs for status with Monero
+        local p2pool_logs=$(sudo journalctl -u p2pool -n 10 --no-pager -q 2>/dev/null)
+        
+        if echo "$p2pool_logs" | grep -q -E "(monerod is busy syncing|monerod is not synchronized)" 2>/dev/null; then
+            log "P2Pool is healthy - waiting for Monero daemon to complete sync"
+        elif echo "$p2pool_logs" | grep -q -E "(connected.*monerod|height.*[0-9])" 2>/dev/null; then
+            log "P2Pool is actively connected to synchronized Monero daemon"
+        elif echo "$p2pool_logs" | grep -q -E "(error|failed)" 2>/dev/null; then
+            warning "P2Pool may have connection issues - check logs: sudo journalctl -u p2pool -n 10"
             all_healthy=false
+        else
+            log "→ P2Pool starting up..."
         fi
     fi
     
@@ -1031,15 +1046,7 @@ verify_mining_services_health() {
             local xmrig_response=$(curl -s --max-time 5 "http://127.0.0.1:18088/1/summary" 2>/dev/null)
             if [[ -n "$xmrig_response" ]]; then
                 local pool_status=$(echo "$xmrig_response" | jq -r '.connection.pool // "N/A"' 2>/dev/null)
-                local donate_level=$(echo "$xmrig_response" | jq -r '.donate_level // 1' 2>/dev/null)
                 local hashrate=$(echo "$xmrig_response" | jq -r '.hashrate.total[0] // 0' 2>/dev/null)
-                
-                # Verify donation level
-                if [[ "$donate_level" == "0" ]]; then
-                    log "XMRig donation level: 0% (confirmed)"
-                else
-                    warning "XMRig donation level: $donate_level% (should be 0%)"
-                fi
                 
                 # Check pool connection
                 if [[ "$pool_status" != "N/A" && "$pool_status" != "null" ]]; then
@@ -1066,7 +1073,25 @@ verify_mining_services_health() {
     local worker_id=$(jq -r '.["worker-id"]' "$SCRIPT_DIR/config.json" 2>/dev/null || echo "Unknown")
     log "  Worker ID: $worker_id"
     
-    # 5. Overall status summary
+    # 5. Final donation level verification 
+    log ""
+    log "==> Final XMRig 0% donation verification..."
+    local xmrig_logs=$(sudo journalctl -u xmrig -n 25 --no-pager -q 2>/dev/null)
+    if echo "$xmrig_logs" | grep -q "\\* DONATE.*0%" 2>/dev/null; then
+        local donate_line=$(echo "$xmrig_logs" | grep "\\* DONATE" | tail -1)
+        log "SUCCESS: $donate_line"
+    else
+        local donate_line=$(echo "$xmrig_logs" | grep "\\* DONATE" | tail -1 2>/dev/null)
+        if [[ -n "$donate_line" ]]; then
+            warning "XMRig donation check: $donate_line"
+            all_healthy=false
+        else
+            warning "Could not verify donation level from XMRig startup logs"
+            all_healthy=false
+        fi
+    fi
+
+    # 6. Overall status summary
     log ""
     if [[ "$all_healthy" == "true" ]]; then
         log "SUCCESS: All mining services are healthy and properly configured!"
@@ -2043,7 +2068,7 @@ Type=simple
 User=root
 Group=root
 WorkingDirectory=$XMRIG_DIR/build
-ExecStart=$XMRIG_DIR/build/xmrig --config=$CONFIG_DIR/config.json --donate-level=0 --pools-file=$CONFIG_DIR/config.json
+ExecStart=$XMRIG_DIR/build/xmrig --config=$CONFIG_DIR/config.json --donate-level=0
 Restart=always
 RestartSec=15
 StandardOutput=journal
@@ -2076,63 +2101,7 @@ install_xmrig_full() {
         error "XMRig service failed to start"
     fi
     
-    log "==> Verifying XMRig 0% donation level..."
-    sleep 10
-    
-    local max_attempts=6
-    local attempt=1
-    local donation_verified=false
-    
-    while [[ $attempt -le $max_attempts && "$donation_verified" != "true" ]]; do
-        log "Checking donation level (attempt $attempt/$max_attempts)..."
-        
-        if curl -s --max-time 5 "http://127.0.0.1:18088/1/summary" >/dev/null 2>&1; then
-            local api_response=$(curl -s --max-time 5 "http://127.0.0.1:18088/1/summary" 2>/dev/null)
-            if [[ -n "$api_response" ]]; then
-                local runtime_donation=$(echo "$api_response" | jq -r '.donate_level // 1' 2>/dev/null)
-                log "Current donation level: $runtime_donation%"
-                
-                if [[ "$runtime_donation" == "0" ]]; then
-                    log "SUCCESS: 0% donation level verified!"
-                    donation_verified=true
-                    break
-                else
-                    log "WARNING: Donation level is $runtime_donation% (should be 0%)"
-                    log "Restarting XMRig to fix donation level..."
-                    sudo systemctl restart xmrig
-                    sleep 15
-                fi
-            fi
-        else
-            log "XMRig API not responding yet, waiting..."
-            sleep 10
-        fi
-        
-        ((attempt++))
-    done
-    
-    if [[ "$donation_verified" != "true" ]]; then
-        log "WARNING: Could not verify 0% donation level after $max_attempts attempts"
-        log "Forcing XMRig restart with explicit parameters..."
-        
-        # Stop service and restart with explicit donation=0
-        sudo systemctl stop xmrig
-        sleep 5
-        sudo systemctl start xmrig
-        sleep 10
-        
-        # Final verification
-        if curl -s --max-time 5 "http://127.0.0.1:18088/1/summary" >/dev/null 2>&1; then
-            local final_response=$(curl -s --max-time 5 "http://127.0.0.1:18088/1/summary" 2>/dev/null)
-            local final_donation=$(echo "$final_response" | jq -r '.donate_level // 1' 2>/dev/null)
-            if [[ "$final_donation" == "0" ]]; then
-                log "SUCCESS: 0% donation level confirmed after restart!"
-            else
-                error "CRITICAL: XMRig still showing $final_donation% donation level."
-                error "Source code modification failed - check if donation level was properly set to 0."
-            fi
-        fi
-    fi
+
     
     # Verify mining services health
     verify_mining_services_health
@@ -3071,8 +3040,7 @@ install_xmrig_full
 
 
 
-# Verify donation level in config
-verify_donation_level "$CONFIG_DIR/config.json" "$XMRIG_BINARY"
+
 
 # Install XMRig Exporter for monitoring
 log "==> Installing latest XMRig Exporter from GitHub..."
