@@ -844,6 +844,9 @@ sudo systemctl status xmrig p2pool monerod
 # View current mining performance
 curl -s http://localhost:18088/1/summary | jq '.hashrate'
 # Or remotely: curl -s http://[rig-ip]:18088/1/summary | jq '.hashrate'
+
+# Check Donation percentage:
+sudo journalctl -u xmrig -n 50 --no-pager -q | grep '\\* DONATE' | tail -1
 ```
 
 **Note:** All optimizations applied automatically. No manual BIOS changes required.
