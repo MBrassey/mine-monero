@@ -847,6 +847,9 @@ curl -s http://localhost:18088/1/summary | jq '.hashrate'
 
 # Check Donation percentage:
 sudo journalctl -u xmrig -n 50 --no-pager -q | grep '\\* DONATE' | tail -1
+
+# XMRig summary
+curl http://127.0.0.1:8080/2/summary | jq
 ```
 
 **Note:** All optimizations applied automatically. No manual BIOS changes required.
