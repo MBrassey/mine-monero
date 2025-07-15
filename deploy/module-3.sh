@@ -1,33 +1,25 @@
 #!/bin/bash
 
-# Monero Mining Setup Script
-# Builds Monero, XMRig, and P2Pool from source with checksum verification
-
 set -euo pipefail
 
-# Configuration
 WALLET_ADDRESS="461rx8xiZNDDBv3SyUVhqS1tFo8FaGTaUhZ3HYNMnsK5FesEgreFYPoj3L2ubRFXUYEdzrauYCM2XdtEg2K5Fxio4kK9Bvm"
 WORKER_ID="RYZEN_01"
 DONATION_LEVEL=0
 
-# Version information
 MONERO_VERSION="v0.18.4.0"
 XMRIG_VERSION="v6.24.0"
 P2POOL_VERSION="v3.10"
 
-# Check if script has sudo access
 if ! sudo -n true 2>/dev/null; then
     echo "This script requires sudo privileges. Please run with sudo or configure passwordless sudo."
     exit 1
 fi
 
-# Check if actually running as root user (not just with sudo)
 if [[ "$EUID" -eq 0 ]] && [[ -z "$SUDO_USER" ]]; then
    echo "This script should not be run as the root user directly. Use sudo with a regular user account."
    exit 1
 fi
 
-# If running with sudo, use the original user's home directory
 if [[ -n "$SUDO_USER" ]]; then
     REAL_USER="$SUDO_USER"
     REAL_HOME=$(eval echo ~$SUDO_USER)
@@ -36,12 +28,10 @@ else
     REAL_HOME="$HOME"
 fi
 
-# Directory setup
 WORK_DIR="$REAL_HOME/monero-mining"
 BUILD_DIR="$WORK_DIR/build"
 INSTALL_DIR="$WORK_DIR/install"
 
-# Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -64,34 +54,55 @@ success() {
     echo -e "${GREEN}[SUCCESS] $1${NC}"
 }
 
-# Function to download source with Git
 download_git_source() {
     local name=$1
     local repo_url=$2
     local tag=$3
     local dir_name=$4
     local start_dir=$(pwd)
-    
+    local attempt=1
+    local max_attempts=3
+    local success=0
+
     log "Downloading $name $tag..."
-    
-    if [[ -d "$dir_name" ]]; then
-        cd "$dir_name"
-        git fetch origin
-        git checkout "$tag"
-        local current_commit=$(git rev-parse HEAD)
-        log "$name updated (commit: ${current_commit:0:8})"
-    else
-        git clone --recursive --branch "$tag" "$repo_url" "$dir_name"
-        cd "$dir_name"
-        local current_commit=$(git rev-parse HEAD)
-        log "$name cloned (commit: ${current_commit:0:8})"
+
+    while [[ $attempt -le $max_attempts ]]; do
+        if [[ -d "$dir_name" ]]; then
+            cd "$dir_name"
+            if git fetch origin && git checkout "$tag"; then
+                local current_commit=$(git rev-parse HEAD)
+                log "$name updated (commit: ${current_commit:0:8})"
+                success=1
+                cd "$start_dir"
+                break
+            else
+                warning "$name fetch/checkout failed (attempt $attempt/$max_attempts), retrying in 5s..."
+                cd "$start_dir"
+                sleep 5
+                rm -rf "$dir_name"
+            fi
+        else
+            if git clone --recursive --branch "$tag" "$repo_url" "$dir_name"; then
+                cd "$dir_name"
+                local current_commit=$(git rev-parse HEAD)
+                log "$name cloned (commit: ${current_commit:0:8})"
+                success=1
+                cd "$start_dir"
+                break
+            else
+                warning "$name clone failed (attempt $attempt/$max_attempts), retrying in 5s..."
+                rm -rf "$dir_name"
+                sleep 5
+            fi
+        fi
+        attempt=$((attempt+1))
+    done
+
+    if [[ $success -ne 1 ]]; then
+        error "Failed to download $name after $max_attempts attempts."
     fi
-    
-    # Return to starting directory
-    cd "$start_dir"
 }
 
-# Function to install dependencies
 install_dependencies() {
     log "Installing dependencies..."
     
@@ -143,7 +154,6 @@ install_dependencies() {
         msr-tools
 }
 
-# Function to check and configure huge pages
 check_huge_pages() {
     local huge_pages_nr=$(cat /proc/sys/vm/nr_hugepages 2>/dev/null || echo "0")
     local available_hugepages=$(grep HugePages_Free /proc/meminfo | awk '{print $2}' || echo "0")
@@ -157,7 +167,6 @@ check_huge_pages() {
     fi
 }
 
-# Function to add user to required groups
 setup_user_permissions() {
     sudo usermod -a -G dialout,plugdev "$REAL_USER"
     
@@ -169,9 +178,7 @@ EOF
     sudo udevadm trigger
 }
 
-# Function to optimize system for mining
 optimize_system() {
-    # Check if optimization already applied
     if ! grep -q "# Monero mining optimizations" /etc/sysctl.conf; then
         sudo tee -a /etc/sysctl.conf > /dev/null << 'EOF'
 
@@ -191,13 +198,11 @@ EOF
     fi
 }
 
-# Function to build Monero
 build_monero() {
     log "Building Monero..."
     
     cd "$BUILD_DIR"
     
-    # Skip if already built
     if [[ -f "$INSTALL_DIR/bin/monerod" ]]; then
         log "Monero already built, skipping..."
         return 0
@@ -222,13 +227,11 @@ build_monero() {
     make install
 }
 
-# Function to build XMRig with hardcoded 0% donation
 build_xmrig() {
     log "Building XMRig with hardcoded 0% donation..."
     
     cd "$BUILD_DIR"
     
-    # Skip if already built
     if [[ -f "$INSTALL_DIR/bin/xmrig" ]]; then
         log "XMRig already built, skipping..."
         return 0
@@ -238,7 +241,6 @@ build_xmrig() {
     
     cd xmrig
     
-    # Backup and modify donate.h
     cp src/donate.h src/donate.h.backup
     
     cat > src/donate.h << 'EOF'
@@ -271,19 +273,16 @@ EOF
     cp xmrig "$INSTALL_DIR/bin/"
 }
 
-# Function to build P2Pool
 build_p2pool() {
     log "Building P2Pool..."
     
     cd "$BUILD_DIR"
     
-    # Skip if already built
     if [[ -f "$INSTALL_DIR/bin/p2pool" ]]; then
         log "P2Pool already built, skipping..."
         return 0
     fi
     
-    # Clean up any previous p2pool build
     if [[ -d "p2pool" ]]; then
         rm -rf p2pool
     fi
@@ -292,10 +291,8 @@ build_p2pool() {
     
     cd p2pool
     
-    # Initialize submodules
     git submodule update --init --recursive --force
     
-    # Build libzmq dependency if needed
     if [[ ! -f "external/src/libzmq/build/lib/libzmq.a" ]]; then
         log "Building libzmq dependency..."
         cd external/src/libzmq
@@ -313,7 +310,6 @@ build_p2pool() {
         
         make -j$(($(nproc)/2))
         
-        # Ensure library is in expected location
         mkdir -p lib
         if [[ -f libzmq.a ]]; then
             cp libzmq.a lib/
@@ -324,7 +320,6 @@ build_p2pool() {
         log "libzmq already built, skipping..."
     fi
     
-    # Build libuv dependency if needed
     if [[ ! -f "external/src/libuv/build/libuv.a" ]]; then
         log "Building libuv dependency..."
         cd external/src/libuv
@@ -344,7 +339,6 @@ build_p2pool() {
         log "libuv already built, skipping..."
     fi
     
-    # Build P2Pool main binary (skip curl dependency by using system libcurl)
     log "Building P2Pool main binary..."
     rm -rf build
     mkdir -p build
@@ -358,14 +352,10 @@ build_p2pool() {
           -DCMAKE_C_FLAGS="-fno-lto" \
           ..
     
-    # Use fewer parallel jobs to avoid memory issues
-    make -j$(($(nproc)/2))
-    
     mkdir -p "$INSTALL_DIR/bin"
     cp p2pool "$INSTALL_DIR/bin/"
 }
 
-# Function to create XMRig config
 create_xmrig_config() {
     mkdir -p "$INSTALL_DIR/etc"
     mkdir -p "$INSTALL_DIR/data"
@@ -468,14 +458,11 @@ EOF
     sudo chown root:root "$INSTALL_DIR/bin/xmrig"
     sudo chmod 755 "$INSTALL_DIR/bin/xmrig"
     
-    # Ensure proper ownership of directories for the real user
     sudo chown -R "$REAL_USER:$REAL_USER" "$INSTALL_DIR" 2>/dev/null || true
-    # But keep xmrig binary and config owned by root
     sudo chown root:root "$INSTALL_DIR/bin/xmrig"
     sudo chown root:root "$INSTALL_DIR/etc/xmrig-config.json"
 }
 
-# Function to create service management scripts
 create_service_scripts() {
     cat > "$INSTALL_DIR/mining-control.sh" << 'EOF'
 #!/bin/bash
@@ -584,13 +571,10 @@ EOF
     chmod +x "$INSTALL_DIR/mining-control.sh"
     sudo ln -sf "$INSTALL_DIR/mining-control.sh" /usr/local/bin/mining-control
     
-    # Ensure proper ownership
     sudo chown "$REAL_USER:$REAL_USER" "$INSTALL_DIR/mining-control.sh"
 }
 
-# Function to create MSR module loading script - FIXED VERSION
 create_msr_setup() {
-    # Create a more robust MSR setup service that never fails
     sudo tee /etc/systemd/system/msr-tools.service > /dev/null << 'EOF'
 [Unit]
 Description=Load MSR kernel module and configure permissions for XMRig
@@ -610,7 +594,6 @@ SuccessExitStatus=0 1
 WantedBy=multi-user.target
 EOF
     
-    # Also create a helper script for manual MSR loading
     sudo tee /usr/local/bin/setup-msr > /dev/null << 'EOF'
 #!/bin/bash
 
@@ -652,13 +635,10 @@ EOF
     
     sudo chmod +x /usr/local/bin/setup-msr
     
-    # Enable the service (but don't fail if it doesn't work)
     sudo systemctl enable msr-tools.service || warning "Could not enable MSR service - will continue without it"
 }
 
-# Function to create systemd services
 create_systemd_services() {
-    # Create monerod service - Fixed with better connectivity and correct data-dir
     sudo tee /etc/systemd/system/monerod.service > /dev/null << EOF
 [Unit]
 Description=Monero Daemon
@@ -682,7 +662,6 @@ StandardError=journal
 WantedBy=multi-user.target
 EOF
 
-    # Create p2pool service
     sudo tee /etc/systemd/system/p2pool.service > /dev/null << EOF
 [Unit]
 Description=P2Pool Monero Mining Pool
@@ -704,7 +683,6 @@ TimeoutStartSec=120
 WantedBy=multi-user.target
 EOF
 
-    # Create xmrig service (always runs as root)
     sudo tee /etc/systemd/system/xmrig.service > /dev/null << EOF
 [Unit]
 Description=XMRig Monero Miner
@@ -734,14 +712,11 @@ EOF
     sudo systemctl daemon-reload
 }
 
-# Function to handle MSR loading gracefully
 setup_msr_safely() {
     log "Setting up MSR module (performance optimization)..."
     
-    # Try to load MSR module
     if sudo modprobe msr 2>/dev/null; then
         log "MSR module loaded successfully"
-        # Set permissions on MSR devices
         if [ -d /dev/cpu ]; then
             sudo find /dev/cpu -name "msr" -type c -exec chmod 644 {} \; 2>/dev/null || true
             log "MSR device permissions configured"
@@ -751,14 +726,12 @@ setup_msr_safely() {
         warning "Some performance monitoring features may be disabled"
     fi
     
-    # Set CPU governor to performance if available
     if [ -f /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor ]; then
         echo "performance" | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor > /dev/null 2>&1 || true
         log "CPU governor set to performance"
     fi
 }
 
-# Function to ensure huge pages are set to the recommended value
 ensure_hugepages() {
     local desired=6144
     local current=$(cat /proc/sys/vm/nr_hugepages 2>/dev/null || echo 0)
@@ -769,19 +742,15 @@ ensure_hugepages() {
         log "System has $current huge pages (OK)"
     fi
 }
-    
 
-# Function to cleanup build dependencies for security
 cleanup_build_dependencies() {
     log "Cleaning up build dependencies for security..."
     
-    # Remove build directories
     if [[ -d "$BUILD_DIR" ]]; then
         rm -rf "$BUILD_DIR"
         log "Removed build directory"
     fi
     
-    # Remove build tools and development packages
     sudo apt-get autoremove --purge -y \
         build-essential \
         cmake \
@@ -818,14 +787,12 @@ cleanup_build_dependencies() {
         libpsl-dev \
         2>/dev/null || true
     
-    # Clean package cache
     sudo apt-get autoremove -y
     sudo apt-get autoclean
     
     log "Build dependencies removed for security"
 }
 
-# Function to show final setup summary
 show_setup_summary() {
     log "Checking final mining status..."
     local hashrate=$(curl -s http://127.0.0.1:8080/2/summary 2>/dev/null | jq -r '.hashrate.total[0] // 0' 2>/dev/null || echo "0")
@@ -869,7 +836,6 @@ show_setup_summary() {
     fi
 }
 
-# Main function
 main() {
     log "Starting Monero mining setup"
     log "User: $REAL_USER"
@@ -898,7 +864,6 @@ main() {
     create_systemd_services
     
     log "Enabling services..."
-    # Enable MSR service but don't fail if it doesn't work
     if sudo systemctl enable msr-tools.service; then
         log "MSR service enabled"
     else
@@ -910,44 +875,36 @@ main() {
     sudo systemctl enable xmrig.service
     
     log "Starting services..."
-    # Try to start MSR service, but don't fail if it doesn't work
     if sudo systemctl start msr-tools.service; then
         log "MSR service started successfully"
     else
         warning "MSR service could not be started - will setup MSR manually"
-        # Setup MSR manually as fallback
         setup_msr_safely
     fi
     
-    # Start services without waiting for them to fully complete
     log "Starting monerod service (this may take several hours to sync)..."
     sudo systemctl start monerod.service &
     MONEROD_PID=$!
     
-    # Give monerod a moment to start
     sleep 10
     
     log "Starting p2pool service..."
     sudo systemctl start p2pool.service &
     P2POOL_PID=$!
     
-    # Give p2pool a moment to start
     sleep 5
     
     log "Starting xmrig service..."
     sudo systemctl start xmrig.service &
     XMRIG_PID=$!
     
-    # Wait a bit for services to initialize
     sleep 15
     
     log "Services have been started. They may take several minutes to fully initialize."
     log "Use 'mining-control status' to check their current state."
     
-    # Clean up build dependencies for security
     cleanup_build_dependencies
     
-    # Show final setup summary after cleanup
     show_setup_summary
 }
 
