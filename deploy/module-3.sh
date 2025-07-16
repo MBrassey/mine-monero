@@ -777,7 +777,6 @@ cleanup_build_dependencies() {
         libprotobuf-dev \
         protobuf-compiler \
         libudev-dev \
-        libhwloc-dev \
         libuv1-dev \
         libcurl4-openssl-dev \
         libbrotli-dev \
@@ -787,10 +786,18 @@ cleanup_build_dependencies() {
         libpsl-dev \
         2>/dev/null || true
     
+    log "Ensuring runtime libraries are available..."
+    sudo apt-get install -y \
+        libhwloc15 \
+        libunwind8 \
+        libssl3 \
+        libzmq5 \
+        2>/dev/null || true
+    
     sudo apt-get autoremove -y
     sudo apt-get autoclean
     
-    log "Build dependencies removed for security"
+    log "Build dependencies removed for security (runtime libraries preserved)"
 }
 
 show_setup_summary() {
