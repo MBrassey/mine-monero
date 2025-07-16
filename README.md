@@ -4,7 +4,7 @@
 
 Automated deployment system for streamlined Monero mining with P2Pool decentralized mining, XMRig optimization, and enterprise-grade reliability.
 
-&nbsp;• **Zero Mining Fees** P2Pool  
+&nbsp;• **Zero Mining Fees** local P2Pool  
 &nbsp;• **Zero Donation** XMRig
 
 <br clear="left"/>
@@ -254,7 +254,7 @@ vim module-3.sh
 
 Example:
 ```bash
-WALLET_ADDRESS="YOUR_MONERO_WALLET_ADDRESS_HERE"
+WALLET_ADDRESS="MONERO_WALLET_ADDRESS_HERE"
 WORKER_ID="RYZEN_01"
 DONATION_LEVEL=0
 ```
@@ -269,7 +269,7 @@ DONATION_LEVEL=0
 1. Make the script executable and run:
    ```bash
    chmod +x module-3.sh
-   ./module-3.sh
+   sudo ./module-3.sh
    ```
 
 **What module-3.sh does:**
@@ -407,7 +407,7 @@ curl -s http://[rig-ip]:8080/2/summary | jq
 ## Expected Operation Timeline
 
 1. **Module-3 execution**: 30-60 minutes (compilation and setup)
-2. **Monerod sync**: Several hours to days (full blockchain download)
+2. **Monerod sync**: ~3 days (full blockchain download)
 3. **P2Pool sync**: 5-10 minutes after monerod is synced
 4. **Mining starts**: Immediately when P2Pool is ready
 5. **First shares**: Within minutes of mining start
@@ -434,8 +434,8 @@ sudo systemctl is-enabled monerod p2pool xmrig
 
 ### P2Pool Monitoring
 - **P2Pool Mini Observer**: https://mini.p2pool.observer/miner/ (enter your wallet address at the end)
-- **Usage**: Visit https://mini.p2pool.observer/miner/YOUR_WALLET_ADDRESS_HERE
-- **Local P2Pool**: Wait for monerod to fully sync first
+- **Usage**: Visit https://mini.p2pool.observer/miner/WALLET_ADDRESS_HERE
+- **Local P2Pool**: Wait for monerod to fully sync first, then restart p2pool service
 
 ## Troubleshooting
 
