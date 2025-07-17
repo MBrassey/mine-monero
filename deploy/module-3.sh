@@ -179,10 +179,9 @@ EOF
 }
 
 optimize_system() {
-    if ! grep -q "# Monero mining optimizations" /etc/sysctl.conf; then
+    if ! grep -q "Monero mining optimizations" /etc/sysctl.conf; then
         sudo tee -a /etc/sysctl.conf > /dev/null << 'EOF'
 
-# Monero mining optimizations
 vm.swappiness=1
 kernel.numa_balancing=0
 kernel.sched_autogroup_enabled=0
@@ -351,6 +350,8 @@ build_p2pool() {
           -DCMAKE_CXX_FLAGS="-fno-lto" \
           -DCMAKE_C_FLAGS="-fno-lto" \
           ..
+    
+    make -j$(nproc)
     
     mkdir -p "$INSTALL_DIR/bin"
     cp p2pool "$INSTALL_DIR/bin/"
@@ -597,7 +598,6 @@ EOF
     sudo tee /usr/local/bin/setup-msr > /dev/null << 'EOF'
 #!/bin/bash
 
-# Helper script to manually load MSR module and set permissions
 echo "Loading MSR kernel module..."
 if ! lsmod | grep -q "^msr "; then
     if modprobe msr 2>/dev/null; then
@@ -611,7 +611,6 @@ else
     echo "MSR module already loaded"
 fi
 
-# Set permissions if MSR devices exist
 if [ -d /dev/cpu ]; then
     echo "Setting MSR device permissions..."
     find /dev/cpu -name "msr" -type c -exec chmod 644 {} \; 2>/dev/null || true
@@ -620,7 +619,6 @@ else
     echo "Warning: MSR devices not found. Performance monitoring may be limited."
 fi
 
-# Set CPU governor to performance if available
 if [ -f /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor ]; then
     echo "Setting CPU governor to performance..."
     echo performance | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor >/dev/null 2>&1 || true
@@ -743,34 +741,6 @@ ensure_hugepages() {
     fi
 }
 
-cleanup_build_dependencies() {
-    log "Cleaning up build dependencies for security..."
-    
-    if [[ -d "$BUILD_DIR" ]]; then
-        rm -rf "$BUILD_DIR"
-        log "Removed build directory"
-    fi
-    
-    # Only remove actual build tools, keep all library packages
-    sudo apt-get autoremove --purge -y \
-        build-essential \
-        cmake \
-        pkg-config \
-        doxygen \
-        graphviz \
-        autotools-dev \
-        autoconf \
-        automake \
-        libtool \
-        git \
-        2>/dev/null || true
-    
-    sudo apt-get autoremove -y
-    sudo apt-get autoclean
-    
-    log "Build tools removed (all libraries preserved for runtime)"
-}
-
 show_setup_summary() {
     log "Checking final mining status..."
     local hashrate=$(curl -s http://127.0.0.1:8080/2/summary 2>/dev/null | jq -r '.hashrate.total[0] // 0' 2>/dev/null || echo "0")
@@ -788,9 +758,7 @@ show_setup_summary() {
     log "  P2Pool: Built from tag $P2POOL_VERSION"
     
     log "Blockchain configuration:"
-    log "  Using pruned blockchain (faster sync, smaller storage)"
-    log "  Storage requirement: ~3GB instead of 200GB+"
-    log "  Sync time: 15-30 minutes instead of hours/days"
+    log "  Using pruned blockchain"
     
     log "Mining status:"
     log "  Mining Address: $WALLET_ADDRESS"
@@ -865,7 +833,7 @@ main() {
         setup_msr_safely
     fi
     
-    log "Starting monerod service with pruned blockchain (much faster sync - typically 15-30 minutes instead of hours)..."
+    log "Starting monerod service with pruned blockchain"
     sudo systemctl start monerod.service &
     MONEROD_PID=$!
     
@@ -885,8 +853,6 @@ main() {
     
     log "Services have been started. They may take several minutes to fully initialize."
     log "Use 'mining-control status' to check their current state."
-    
-    cleanup_build_dependencies
     
     show_setup_summary
 }
