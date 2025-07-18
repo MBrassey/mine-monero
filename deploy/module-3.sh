@@ -109,6 +109,7 @@ install_dependencies() {
     sudo apt-get update
     sudo apt-get install -y \
         build-essential \
+        bpytop \
         cmake \
         pkg-config \
         libboost-all-dev \
@@ -427,19 +428,6 @@ create_xmrig_config() {
             "enabled": true,
             "tls": false,
             "daemon": false
-        },
-        {
-            "algo": null,
-            "coin": "monero",
-            "url": "p2pool-eu.mine.xmrpool.net:3333",
-            "user": "$WALLET_ADDRESS",
-            "pass": "$WORKER_ID",
-            "rig-id": null,
-            "nicehash": false,
-            "keepalive": true,
-            "enabled": true,
-            "tls": false,
-            "daemon": false
         }
     ],
     "print-time": 60,
@@ -672,7 +660,7 @@ Type=simple
 User=$REAL_USER
 Group=$REAL_USER
 WorkingDirectory=$INSTALL_DIR/p2pool-data
-ExecStart=$INSTALL_DIR/bin/p2pool --host 127.0.0.1 --rpc-port 18081 --zmq-port 18083 --wallet $WALLET_ADDRESS --stratum 127.0.0.1:3333 --p2p 127.0.0.1:37889 --addpeers 65.21.227.114:37889,node.p2pool.io:37889 --loglevel 1 --mini --light-mode
+ExecStart=$INSTALL_DIR/bin/p2pool --host 127.0.0.1 --rpc-port 18081 --zmq-port 18083 --wallet $WALLET_ADDRESS --stratum 127.0.0.1:3333 --p2p 127.0.0.1:37889 --loglevel 1 --mini --light-mode
 Restart=always
 RestartSec=10
 TimeoutStartSec=120
@@ -741,6 +729,35 @@ ensure_hugepages() {
     fi
 }
 
+verify_pruned_mode() {
+    local max_attempts=30
+    local attempt=1
+    
+    log "Verifying pruned blockchain mode..."
+    
+    while [[ $attempt -le $max_attempts ]]; do
+        local db_size=$(curl -s http://127.0.0.1:18081/get_info 2>/dev/null | jq -r '.database_size // 0' 2>/dev/null || echo "0")
+        
+        if [[ "$db_size" != "0" ]] && [[ "$db_size" != "null" ]]; then
+            local db_size_gb=$((db_size / 1024 / 1024 / 1024))
+            if [[ $db_size_gb -le 5 ]]; then
+                success "CONFIRMED: Pruned blockchain mode active (DB size: ${db_size_gb}GB)"
+                return 0
+            elif [[ $db_size_gb -gt 10 ]]; then
+                error "ERROR: Full blockchain detected (${db_size_gb}GB)! Pruning failed!"
+                return 1
+            fi
+        fi
+        
+        log "Waiting for monerod to start... (attempt $attempt/$max_attempts)"
+        sleep 10
+        attempt=$((attempt+1))
+    done
+    
+    warning "Could not verify pruned mode - monerod may still be starting"
+    return 0
+}
+
 show_setup_summary() {
     log "Checking final mining status..."
     local hashrate=$(curl -s http://127.0.0.1:8080/2/summary 2>/dev/null | jq -r '.hashrate.total[0] // 0' 2>/dev/null || echo "0")
@@ -758,14 +775,16 @@ show_setup_summary() {
     log "  P2Pool: Built from tag $P2POOL_VERSION"
     
     log "Blockchain configuration:"
-    log "  Using pruned blockchain"
+    log "  FORCED PRUNED BLOCKCHAIN ONLY"
+    log "  Maximum storage: ~3-5GB (NOT 200GB+)"
+    log "  Fast sync: 15-30 minutes typical"
     
     log "Mining status:"
     log "  Mining Address: $WALLET_ADDRESS"
     log "  Worker ID: $worker_id"
     log "  Current Hashrate: $hashrate H/s"
     log "  Donation Level: $donation_level%"
-    log "  Pool: $pool_url"
+    log "  Pool: LOCAL P2POOL ONLY (127.0.0.1:3333)"
     
     log "Service management:"
     log "  mining-control start|stop|restart|status|logs"
@@ -825,6 +844,13 @@ main() {
     sudo systemctl enable p2pool.service
     sudo systemctl enable xmrig.service
     
+    log "Ensuring pruned blockchain configuration..."
+    if [[ -d "$INSTALL_DIR/data" ]] && [[ -n "$(ls -A "$INSTALL_DIR/data" 2>/dev/null)" ]]; then
+        log "Removing existing blockchain data to force pruned sync..."
+        rm -rf "$INSTALL_DIR/data"/*
+    fi
+    mkdir -p "$INSTALL_DIR/data"
+    
     log "Starting services..."
     if sudo systemctl start msr-tools.service; then
         log "MSR service started successfully"
@@ -833,7 +859,7 @@ main() {
         setup_msr_safely
     fi
     
-    log "Starting monerod service with pruned blockchain"
+    log "Starting monerod service with PRUNED blockchain (fresh sync)"
     sudo systemctl start monerod.service &
     MONEROD_PID=$!
     
@@ -853,6 +879,8 @@ main() {
     
     log "Services have been started. They may take several minutes to fully initialize."
     log "Use 'mining-control status' to check their current state."
+    
+    verify_pruned_mode
     
     show_setup_summary
 }

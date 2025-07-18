@@ -41,7 +41,7 @@ This mining setup is optimized for the following hardware configuration:
 - **Huge Pages Support:** 1GB and 2MB pages for RandomX optimization
 
 **Storage & Connectivity:**
-- **NVMe SSD:** 500GB (Sufficient storage for blockchain data, logs etc.)
+- **NVMe SSD:** 500GB (More than sufficient for pruned blockchain ~5GB + logs)
 - **Network:** Gigabit Ethernet (REMOVE WIFI MODULE FOR SECURITY)
 
 ### Case Assembly Instructions
@@ -280,8 +280,8 @@ DONATION_LEVEL=0
   - P2Pool from official repository
 - **Creates optimized XMRig configuration**:
   - Configured for Ryzen 9950X with huge pages enabled
-  - Primary pool: localhost:3333 (local P2Pool Mini)
-  - Backup pool: pool.supportxmr.com:3333
+  - Pool: localhost:3333 (local P2Pool Mini ONLY)
+  - No external pools or fallbacks
 - **Sets up systemd services** with proper dependencies:
   - monerod.service (Monero daemon)
   - p2pool.service (P2Pool Mini with --mini flag)
@@ -301,21 +301,22 @@ DONATION_LEVEL=0
 
 | Component | Implementation | Configuration |
 |-----------|----------------|---------------|
-| **Mining Pool** | P2Pool Mini (decentralized) | No fees, direct payouts |
+| **Mining Pool** | P2Pool Mini (local only) | No fees, direct payouts |
 | **Miner Software** | XMRig (compiled with 0% donation) | No donation, 0% overhead |
-| **Blockchain Node** | Monero daemon (full node) | Required for P2Pool operation |
+| **Blockchain Node** | Monero daemon (pruned) | Faster sync, smaller storage |
 | **Minimum Payout** | P2Pool threshold | ~0.00027 XMR |
-| **Network Architecture** | Distributed P2P | No central servers |
+| **Network Architecture** | Local P2Pool instance | No external pool connections |
 | **Payout Method** | Direct to wallet | No intermediary custody |
 
 ## System Components
 
-### P2Pool Mini - Decentralized Mining Pool
-- Fully decentralized pool implementation with --mini flag
+### P2Pool Mini - Local Mining Pool
+- Local P2Pool instance with --mini flag (isolated mode)
 - Zero fees permanently
 - Direct wallet payouts
 - Low minimum payout threshold: ~0.00027 XMR
 - No registration required
+- No external peers or connections
 
 ### XMRig - Optimized Miner
 - Compiled from source with 0% donation level hardcoded
@@ -333,7 +334,7 @@ DONATION_LEVEL=0
 
 - Ubuntu 20.04+ or Debian 11+ (x64)
 - Minimum 16GB RAM (for huge pages allocation)
-- Minimum 100GB free disk space (for full Monero blockchain)
+- Minimum 20GB free disk space (for pruned blockchain ~5GB + system)
 - Stable internet connection
 
 ## Dependencies & Repositories
@@ -407,7 +408,7 @@ curl -s http://[rig-ip]:8080/2/summary | jq
 ## Expected Operation Timeline
 
 1. **Module-3 execution**: 30-60 minutes (compilation and setup)
-2. **Monerod sync**: ~3 days (full blockchain download)
+2. **Monerod sync**: 15-30 minutes (pruned blockchain download)
 3. **P2Pool sync**: 5-10 minutes after monerod is synced
 4. **Mining starts**: Immediately when P2Pool is ready
 5. **First shares**: Within minutes of mining start
@@ -435,7 +436,7 @@ sudo systemctl is-enabled monerod p2pool xmrig
 ### P2Pool Monitoring
 - **P2Pool Mini Observer**: https://mini.p2pool.observer/miner/ (enter your wallet address at the end)
 - **Usage**: Visit https://mini.p2pool.observer/miner/WALLET_ADDRESS_HERE
-- **Local P2Pool**: Wait for monerod to fully sync first, then restart p2pool service
+- **Local P2Pool**: Wait for monerod to sync (15-30 minutes), then restart p2pool service
 
 ## Troubleshooting
 
@@ -452,10 +453,10 @@ mining-control restart
 
 **P2Pool not connecting**
 ```bash
-# Check if monerod is fully synced
+# Check if monerod is synced (pruned mode syncs in 15-30 minutes)
 sudo journalctl -u monerod.service -n 20
 
-# P2Pool requires fully synced monerod
+# P2Pool requires synced monerod
 # Look for: "Height: XXXX/XXXX (100.0%)" in monerod logs
 ```
 
@@ -508,7 +509,7 @@ Module-3 creates an optimized configuration at `~/monero-mining/install/etc/xmri
 - **Hardware AES**: Enabled for better performance
 - **CPU Priority**: Set to 5 for mining priority
 - **Donation Level**: Hardcoded to 0%
-- **Pool Failover**: Local P2Pool primary, SupportXMR backup
+- **Pool**: Local P2Pool ONLY (127.0.0.1:3333)
 
 ### P2Pool Configuration
 P2Pool runs with the following settings:
@@ -517,6 +518,7 @@ P2Pool runs with the following settings:
 - **Light Mode**: `--light-mode` for reduced memory usage
 - **Wallet**: Your specified wallet address
 - **Local Stratum**: Port 3333 for XMRig connection
+- **Isolated Mode**: No external peers (completely local)
 - **Log Level**: 1 for minimal verbosity
 
 ### Service Dependencies
