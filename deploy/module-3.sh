@@ -673,7 +673,7 @@ Type=simple
 User=$REAL_USER
 Group=$REAL_USER
 WorkingDirectory=$INSTALL_DIR
-ExecStart=$INSTALL_DIR/bin/monerod --non-interactive --data-dir $INSTALL_DIR/data --log-file $INSTALL_DIR/logs/monerod.log --zmq-pub tcp://127.0.0.1:18083 --rpc-bind-ip 127.0.0.1 --rpc-bind-port 18081 --restricted-rpc --confirm-external-bind --log-level 1 --out-peers 32 --in-peers 64 --check-updates disabled --prune-blockchain --sync-pruned-blocks --no-zmq --block-sync-size 100 --bootstrap-daemon-address node.supportxmr.com:18081 --db-sync-mode fast:async:250000000bytes
+ExecStart=$INSTALL_DIR/bin/monerod --non-interactive --data-dir $INSTALL_DIR/data --log-file $INSTALL_DIR/logs/monerod.log --zmq-pub tcp://127.0.0.1:18083 --rpc-bind-ip 127.0.0.1 --rpc-bind-port 18081 --restricted-rpc --confirm-external-bind --log-level 1 --out-peers 32 --in-peers 64 --check-updates disabled --prune-blockchain --sync-pruned-blocks --no-zmq
 Restart=always
 RestartSec=10
 TimeoutStartSec=1200
@@ -697,11 +697,10 @@ Type=simple
 User=$REAL_USER
 Group=$REAL_USER
 WorkingDirectory=$INSTALL_DIR/p2pool-data
-ExecStartPre=/usr/local/bin/wait-for-sync
-ExecStart=$INSTALL_DIR/bin/p2pool --host 127.0.0.1 --rpc-port 18081 --zmq-port 18083 --wallet $WALLET_ADDRESS --stratum 127.0.0.1:3333 --p2p 127.0.0.1:37889 --loglevel 1 --mini --local-api
+ExecStart=$INSTALL_DIR/bin/p2pool --host 127.0.0.1 --rpc-port 18081 --zmq-port 18083 --wallet $WALLET_ADDRESS --stratum 127.0.0.1:3333 --p2p 127.0.0.1:37889 --loglevel 1 --mini
 Restart=always
-RestartSec=30
-TimeoutStartSec=600
+RestartSec=10
+TimeoutStartSec=300
 
 [Install]
 WantedBy=multi-user.target
@@ -710,21 +709,19 @@ EOF
     sudo tee /etc/systemd/system/xmrig.service > /dev/null << EOF
 [Unit]
 Description=XMRig Monero Miner
-After=network.target p2pool.service msr-tools.service
+After=network.target monerod.service msr-tools.service
 Wants=network.target
-Requires=p2pool.service
 
 [Service]
 Type=simple
 User=root
 Group=root
 WorkingDirectory=$INSTALL_DIR
-ExecStartPre=/usr/local/bin/wait-for-sync
 ExecStartPre=/usr/local/bin/setup-msr
 ExecStart=$INSTALL_DIR/bin/xmrig --config=$INSTALL_DIR/etc/xmrig-config.json
 Restart=always
-RestartSec=30
-TimeoutStartSec=600
+RestartSec=10
+TimeoutStartSec=60
 Nice=-10
 IOSchedulingClass=1
 IOSchedulingPriority=4
@@ -942,9 +939,9 @@ main() {
     fi
     
     log "Starting services..."
-    sudo systemctl start monerod.service
-    sudo systemctl start p2pool.service
-    sudo systemctl start xmrig.service
+    sudo systemctl --no-block start monerod.service
+    sudo systemctl --no-block start p2pool.service
+    sudo systemctl --no-block start xmrig.service
     
     log "Services started - sync will happen in background"
     
