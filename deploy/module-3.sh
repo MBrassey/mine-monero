@@ -183,6 +183,7 @@ optimize_system() {
     if ! grep -q "Monero mining optimizations" /etc/sysctl.conf; then
         sudo tee -a /etc/sysctl.conf > /dev/null << 'EOF'
 
+# Monero mining optimizations
 vm.swappiness=1
 kernel.numa_balancing=0
 kernel.sched_autogroup_enabled=0
@@ -196,6 +197,42 @@ EOF
     if [ -f /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor ]; then
         echo "performance" | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor > /dev/null 2>&1 || true
     fi
+}
+
+wait_for_monerod_sync() {
+    local max_attempts=300  # 50 minutes max wait
+    local attempt=1
+    
+    log "Waiting for monerod to fully synchronize with the Monero network..."
+    log "This may take 15-60 minutes depending on your connection and hardware..."
+    
+    while [[ $attempt -le $max_attempts ]]; do
+        local sync_info=$(curl -s http://127.0.0.1:18081/get_info 2>/dev/null | jq -r '.synchronized // false' 2>/dev/null || echo "false")
+        local height=$(curl -s http://127.0.0.1:18081/get_info 2>/dev/null | jq -r '.height // 0' 2>/dev/null || echo "0")
+        local target_height=$(curl -s http://127.0.0.1:18081/get_info 2>/dev/null | jq -r '.target_height // 0' 2>/dev/null || echo "0")
+        
+        if [[ "$sync_info" == "true" ]] && [[ "$height" -gt 0 ]] && [[ "$target_height" -gt 0 ]]; then
+            local sync_percentage=$((height * 100 / target_height))
+            if [[ $sync_percentage -ge 99 ]]; then
+                success "Monerod is fully synchronized! Height: $height/$target_height (${sync_percentage}%)"
+                return 0
+            fi
+        fi
+        
+        if [[ "$height" -gt 0 ]] && [[ "$target_height" -gt 0 ]]; then
+            local sync_percentage=$((height * 100 / target_height))
+            log "Sync progress: $height/$target_height (${sync_percentage}%) - waiting... (attempt $attempt/$max_attempts)"
+        else
+            log "Waiting for monerod to start and connect to network... (attempt $attempt/$max_attempts)"
+        fi
+        
+        sleep 10
+        attempt=$((attempt+1))
+    done
+    
+    warning "Monerod sync check timed out after $((max_attempts * 10 / 60)) minutes"
+    warning "Continuing anyway - you can check sync status with: mining-control status"
+    return 0
 }
 
 build_monero() {
@@ -636,10 +673,10 @@ Type=simple
 User=$REAL_USER
 Group=$REAL_USER
 WorkingDirectory=$INSTALL_DIR
-ExecStart=$INSTALL_DIR/bin/monerod --non-interactive --data-dir $INSTALL_DIR/data --log-file $INSTALL_DIR/logs/monerod.log --zmq-pub tcp://127.0.0.1:18083 --disable-dns-checkpoints --enable-dns-blocklist --rpc-bind-ip 127.0.0.1 --rpc-bind-port 18081 --restricted-rpc --confirm-external-bind --log-level 1 --out-peers 32 --in-peers 64 --add-priority-node=p2pmd.xmrvsbeast.com:18080 --add-priority-node=nodes.hashvault.pro:18080 --check-updates disabled --prune-blockchain
+ExecStart=$INSTALL_DIR/bin/monerod --non-interactive --data-dir $INSTALL_DIR/data --log-file $INSTALL_DIR/logs/monerod.log --zmq-pub tcp://127.0.0.1:18083 --rpc-bind-ip 127.0.0.1 --rpc-bind-port 18081 --restricted-rpc --confirm-external-bind --log-level 1 --out-peers 16 --in-peers 32 --check-updates disabled --prune-blockchain --sync-pruned-blocks --no-zmq
 Restart=always
 RestartSec=10
-TimeoutStartSec=600
+TimeoutStartSec=1200
 TimeoutStopSec=60
 StandardOutput=journal
 StandardError=journal
@@ -660,10 +697,11 @@ Type=simple
 User=$REAL_USER
 Group=$REAL_USER
 WorkingDirectory=$INSTALL_DIR/p2pool-data
-ExecStart=$INSTALL_DIR/bin/p2pool --host 127.0.0.1 --rpc-port 18081 --zmq-port 18083 --wallet $WALLET_ADDRESS --stratum 127.0.0.1:3333 --p2p 127.0.0.1:37889 --loglevel 1 --mini --light-mode
+ExecStartPre=/usr/local/bin/wait-for-sync
+ExecStart=$INSTALL_DIR/bin/p2pool --host 127.0.0.1 --rpc-port 18081 --zmq-port 18083 --wallet $WALLET_ADDRESS --stratum 127.0.0.1:3333 --p2p 127.0.0.1:37889 --loglevel 1 --mini --local-api
 Restart=always
-RestartSec=10
-TimeoutStartSec=120
+RestartSec=30
+TimeoutStartSec=600
 
 [Install]
 WantedBy=multi-user.target
@@ -681,12 +719,12 @@ Type=simple
 User=root
 Group=root
 WorkingDirectory=$INSTALL_DIR
-ExecStartPre=/bin/sleep 30
+ExecStartPre=/usr/local/bin/wait-for-sync
 ExecStartPre=/usr/local/bin/setup-msr
 ExecStart=$INSTALL_DIR/bin/xmrig --config=$INSTALL_DIR/etc/xmrig-config.json
 Restart=always
-RestartSec=10
-TimeoutStartSec=60
+RestartSec=30
+TimeoutStartSec=600
 Nice=-10
 IOSchedulingClass=1
 IOSchedulingPriority=4
@@ -696,6 +734,65 @@ WantedBy=multi-user.target
 EOF
 
     sudo systemctl daemon-reload
+}
+
+create_sync_wait_script() {
+    sudo tee /usr/local/bin/wait-for-sync > /dev/null << 'EOF'
+#!/bin/bash
+
+# Wait for monerod to be fully synchronized before starting dependent services
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
+}
+
+wait_for_sync() {
+    local max_attempts=300  # 50 minutes max wait
+    local attempt=1
+    
+    log "Waiting for monerod to be fully synchronized..."
+    
+    while [[ $attempt -le $max_attempts ]]; do
+        # Check if monerod is responding
+        if ! curl -s http://127.0.0.1:18081/get_info >/dev/null 2>&1; then
+            log "Waiting for monerod to start... (attempt $attempt/$max_attempts)"
+            sleep 10
+            attempt=$((attempt+1))
+            continue
+        fi
+        
+        # Get sync status
+        local sync_info=$(curl -s http://127.0.0.1:18081/get_info 2>/dev/null | jq -r '.synchronized // false' 2>/dev/null || echo "false")
+        local height=$(curl -s http://127.0.0.1:18081/get_info 2>/dev/null | jq -r '.height // 0' 2>/dev/null || echo "0")
+        local target_height=$(curl -s http://127.0.0.1:18081/get_info 2>/dev/null | jq -r '.target_height // 0' 2>/dev/null || echo "0")
+        
+        if [[ "$sync_info" == "true" ]] && [[ "$height" -gt 0 ]] && [[ "$target_height" -gt 0 ]]; then
+            local sync_percentage=$((height * 100 / target_height))
+            if [[ $sync_percentage -ge 99 ]]; then
+                log "Monerod is fully synchronized! Height: $height/$target_height (${sync_percentage}%)"
+                return 0
+            fi
+        fi
+        
+        if [[ "$height" -gt 0 ]] && [[ "$target_height" -gt 0 ]]; then
+            local sync_percentage=$((height * 100 / target_height))
+            log "Sync progress: $height/$target_height (${sync_percentage}%) - waiting..."
+        else
+            log "Waiting for monerod to connect to network..."
+        fi
+        
+        sleep 10
+        attempt=$((attempt+1))
+    done
+    
+    log "WARNING: Sync check timed out after $((max_attempts * 10 / 60)) minutes"
+    log "Continuing anyway - service may not work correctly until sync completes"
+    return 0
+}
+
+wait_for_sync
+EOF
+    
+    sudo chmod +x /usr/local/bin/wait-for-sync
 }
 
 setup_msr_safely() {
@@ -775,16 +872,17 @@ show_setup_summary() {
     log "  P2Pool: Built from tag $P2POOL_VERSION"
     
     log "Blockchain configuration:"
-    log "  FORCED PRUNED BLOCKCHAIN ONLY"
-    log "  Maximum storage: ~3-5GB (NOT 200GB+)"
-    log "  Fast sync: 15-30 minutes typical"
+    log "  Pruned blockchain enabled (--prune-blockchain --sync-pruned-blocks)"
+    log "  Storage: ~3-5GB vs ~65GB full node"
+    log "  Fast block sync enabled"
+    log "  ZMQ RPC disabled (--no-zmq)"
     
-    log "Mining status:"
+    log "Mining setup:"
     log "  Mining Address: $WALLET_ADDRESS"
     log "  Worker ID: $worker_id"
     log "  Current Hashrate: $hashrate H/s"
     log "  Donation Level: $donation_level%"
-    log "  Pool: LOCAL P2POOL ONLY (127.0.0.1:3333)"
+    log "  P2Pool stratum: 127.0.0.1:3333"
     
     log "Service management:"
     log "  mining-control start|stop|restart|status|logs"
@@ -802,7 +900,9 @@ show_setup_summary() {
         success "Mining to address: $WALLET_ADDRESS"
         success "Donation level: $donation_level%"
     else
-        warning "Mining may not be fully active yet. Check status with 'mining-control status'"
+        warning "Mining may not be fully active yet"
+        warning "Check status with 'mining-control status'"
+        log "Note: Initial mining may take 5-10 minutes to show hashrate"
     fi
 }
 
@@ -830,6 +930,7 @@ main() {
     
     create_xmrig_config
     create_service_scripts
+    create_sync_wait_script
     create_msr_setup
     create_systemd_services
     
@@ -859,26 +960,23 @@ main() {
         setup_msr_safely
     fi
     
-    log "Starting monerod service with PRUNED blockchain (fresh sync)"
-    sudo systemctl start monerod.service &
-    MONEROD_PID=$!
+    log "Starting monerod with pruned blockchain..."
+    sudo systemctl start monerod.service
+    
+    log "Waiting for monerod to synchronize..."
+    wait_for_monerod_sync
+    
+    log "Starting P2Pool..."
+    sudo systemctl start p2pool.service
     
     sleep 10
     
-    log "Starting p2pool service..."
-    sudo systemctl start p2pool.service &
-    P2POOL_PID=$!
+    log "Starting XMRig..."
+    sudo systemctl start xmrig.service
     
-    sleep 5
+    sleep 10
     
-    log "Starting xmrig service..."
-    sudo systemctl start xmrig.service &
-    XMRIG_PID=$!
-    
-    sleep 15
-    
-    log "Services have been started. They may take several minutes to fully initialize."
-    log "Use 'mining-control status' to check their current state."
+    log "Services started"
     
     verify_pruned_mode
     
