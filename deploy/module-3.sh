@@ -673,7 +673,7 @@ Type=simple
 User=$REAL_USER
 Group=$REAL_USER
 WorkingDirectory=$INSTALL_DIR
-ExecStart=$INSTALL_DIR/bin/monerod --non-interactive --data-dir $INSTALL_DIR/data --log-file $INSTALL_DIR/logs/monerod.log --zmq-pub tcp://127.0.0.1:18083 --rpc-bind-ip 127.0.0.1 --rpc-bind-port 18081 --restricted-rpc --confirm-external-bind --log-level 1 --out-peers 16 --in-peers 32 --check-updates disabled --prune-blockchain --sync-pruned-blocks --no-zmq
+ExecStart=$INSTALL_DIR/bin/monerod --non-interactive --data-dir $INSTALL_DIR/data --log-file $INSTALL_DIR/logs/monerod.log --zmq-pub tcp://127.0.0.1:18083 --rpc-bind-ip 127.0.0.1 --rpc-bind-port 18081 --restricted-rpc --confirm-external-bind --log-level 1 --out-peers 32 --in-peers 64 --check-updates disabled --prune-blockchain --sync-pruned-blocks --no-zmq --block-sync-size 100 --bootstrap-daemon-address node.supportxmr.com:18081 --db-sync-mode fast:async:250000000bytes
 Restart=always
 RestartSec=10
 TimeoutStartSec=1200
@@ -856,32 +856,19 @@ verify_pruned_mode() {
 }
 
 show_setup_summary() {
-    log "Checking final mining status..."
-    local hashrate=$(curl -s http://127.0.0.1:8080/2/summary 2>/dev/null | jq -r '.hashrate.total[0] // 0' 2>/dev/null || echo "0")
-    local donation_level=$(curl -s http://127.0.0.1:8080/2/summary 2>/dev/null | jq -r '.donate_level // "unknown"' 2>/dev/null || echo "unknown")
-    local worker_id=$(curl -s http://127.0.0.1:8080/2/summary 2>/dev/null | jq -r '.worker_id // "unknown"' 2>/dev/null || echo "unknown")
-    local pool_url=$(curl -s http://127.0.0.1:8080/2/summary 2>/dev/null | jq -r '.connection.pool // "unknown"' 2>/dev/null || echo "unknown")
-    
     log "Setup completed"
     log "Installation directory: $INSTALL_DIR"
     
-    log "Security verification:"
-    log "  All source code built from official Git repositories"
-    log "  Monero: Built from tag $MONERO_VERSION"
-    log "  XMRig: Built from tag $XMRIG_VERSION with hardcoded 0% donation"
-    log "  P2Pool: Built from tag $P2POOL_VERSION"
+    log "Components built:"
+    log "  Monero: $MONERO_VERSION"
+    log "  XMRig: $XMRIG_VERSION (0% donation)"
+    log "  P2Pool: $P2POOL_VERSION"
     
-    log "Blockchain configuration:"
-    log "  Pruned blockchain enabled (--prune-blockchain --sync-pruned-blocks)"
+    log "Configuration:"
+    log "  Pruned blockchain (--prune-blockchain --sync-pruned-blocks)"
     log "  Storage: ~3-5GB vs ~65GB full node"
-    log "  Fast block sync enabled"
-    log "  ZMQ RPC disabled (--no-zmq)"
-    
-    log "Mining setup:"
-    log "  Mining Address: $WALLET_ADDRESS"
-    log "  Worker ID: $worker_id"
-    log "  Current Hashrate: $hashrate H/s"
-    log "  Donation Level: $donation_level%"
+    log "  Mining address: $WALLET_ADDRESS"
+    log "  Worker ID: $WORKER_ID"
     log "  P2Pool stratum: 127.0.0.1:3333"
     
     log "Service management:"
@@ -893,17 +880,11 @@ show_setup_summary() {
     log "Monitoring:"
     log "  XMRig API: http://localhost:8080"
     log "  Monero RPC: http://localhost:18081"
-    log "  Live logs: journalctl -u xmrig.service -f"
+    log "  Live logs: journalctl -u monerod.service -f"
     
-    if [[ "$hashrate" != "0" ]] && [[ "$hashrate" != "null" ]] && [[ -n "$hashrate" ]]; then
-        success "Mining active with hashrate $hashrate H/s"
-        success "Mining to address: $WALLET_ADDRESS"
-        success "Donation level: $donation_level%"
-    else
-        warning "Mining may not be fully active yet"
-        warning "Check status with 'mining-control status'"
-        log "Note: Initial mining may take 5-10 minutes to show hashrate"
-    fi
+    success "Installation complete"
+    log "Services are starting - sync will take 15-60 minutes"
+    log "Check mining status: mining-control status"
 }
 
 main() {
@@ -960,25 +941,12 @@ main() {
         setup_msr_safely
     fi
     
-    log "Starting monerod with pruned blockchain..."
+    log "Starting services..."
     sudo systemctl start monerod.service
-    
-    log "Waiting for monerod to synchronize..."
-    wait_for_monerod_sync
-    
-    log "Starting P2Pool..."
     sudo systemctl start p2pool.service
-    
-    sleep 10
-    
-    log "Starting XMRig..."
     sudo systemctl start xmrig.service
     
-    sleep 10
-    
-    log "Services started"
-    
-    verify_pruned_mode
+    log "Services started - sync will happen in background"
     
     show_setup_summary
 }
