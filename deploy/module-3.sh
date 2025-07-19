@@ -38,7 +38,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 log() {
-    echo ":: [$(date '+%Y-%m-%d %H:%M:%S')] $1"
+    echo ":: $1"
 }
 
 error() {
