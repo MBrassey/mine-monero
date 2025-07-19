@@ -3,14 +3,14 @@
 set -e
 
 if [ "$EUID" -ne 0 ]; then
-    echo "Run with sudo"
+    echo ":: Run with sudo"
     exit 1
 fi
 
-log() { echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1"; }
-error() { echo "[$(date +'%Y-%m-%d %H:%M:%S')] ERROR: $1" >&2; }
-warning() { echo "[$(date +'%Y-%m-%d %H:%M:%S')] WARNING: $1" >&2; }
-info() { echo "[$(date +'%Y-%m-%d %H:%M:%S')] INFO: $1"; }
+log() { echo ":: [$(date +'%Y-%m-%d %H:%M:%S')] $1"; }
+error() { echo ":: [$(date +'%Y-%m-%d %H:%M:%S')] ERROR: $1" >&2; }
+warning() { echo ":: [$(date +'%Y-%m-%d %H:%M:%S')] WARNING: $1" >&2; }
+info() { echo ":: [$(date +'%Y-%m-%d %H:%M:%S')] INFO: $1"; }
 
 cleanup_previous_state() {
     log "==> Cleaning up previous configurations..."
@@ -477,7 +477,7 @@ main() {
     update_output=$(apt-get update -y 2>&1)
     update_exit_code=$?
     
-    echo "$update_output"
+    echo ":: $update_output"
     
     if [ $update_exit_code -ne 0 ]; then
         warning "Some repositories failed to update. Cleaning up and retrying..."
@@ -543,7 +543,7 @@ main() {
     
     log "Applying mining optimizations..."
     
-    echo "Disabling CPU throttling..."
+    echo ":: Disabling CPU throttling..."
     for policy in /sys/devices/system/cpu/cpufreq/policy*; do
         echo performance > "$policy/scaling_governor" 2>/dev/null || true
         if [[ -f "$policy/scaling_boost_enabled" ]]; then
@@ -736,7 +736,7 @@ SIMPLE_EOL
     
     if [[ -f /var/run/reboot-required ]] || grep -q "intel_pstate=disable" /etc/default/grub; then
         echo
-        echo "System changes require a reboot to take full effect."
+        echo ":: System changes require a reboot to take full effect."
         read -p "Would you like to reboot now? [y/N] " -n 1 -r
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then

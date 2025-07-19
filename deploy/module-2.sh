@@ -3,28 +3,28 @@
 COLOR="${1:-0000FF}"
 
 if ! [[ $COLOR =~ ^[0-9A-Fa-f]{6}$ ]]; then
-    echo "Error: Invalid color format. Please use 6-digit hex color (e.g., FFFFFF for white, FF0000 for red)"
+    echo ":: Error: Invalid color format. Please use 6-digit hex color (e.g., FFFFFF for white, FF0000 for red)"
     exit 1
 fi
 
 if [ "$EUID" -ne 0 ]; then
-    echo "Run with sudo"
+    echo ":: Run with sudo"
     exit 1
 fi
 
 setup_initial_config() {
     if ! command -v openrgb &> /dev/null; then
-        echo "OpenRGB not found. Installing from Debian package..."
+        echo ":: OpenRGB not found. Installing from Debian package..."
         cd /tmp
         wget https://openrgb.org/releases/release_0.9/openrgb_0.9_amd64_bookworm_b5f46e3.deb
         apt --fix-broken install -y ./openrgb_0.9_amd64_bookworm_b5f46e3.deb
     fi
 
-    echo "Installing required packages..."
+    echo ":: Installing required packages..."
     apt-get update
     apt-get install -y i2c-tools dkms build-essential linux-headers-$(uname -r)
 
-    echo "Loading required kernel modules..."
+    echo ":: Loading required kernel modules..."
     modprobe i2c-dev
     modprobe i2c-piix4
     modprobe i2c_amd_mp2 2>/dev/null || true
@@ -38,7 +38,7 @@ setup_initial_config() {
     done
 
     if [ ! -f /etc/modprobe.d/i2c.conf ]; then
-        echo "Setting up module dependencies..."
+        echo ":: Setting up module dependencies..."
         cat > /etc/modprobe.d/i2c.conf << EOF
 softdep i2c_piix4 pre: i2c_amd_mp2
 softdep i2c_piix4 pre: i2c_amd_ryzen
@@ -46,7 +46,7 @@ EOF
     fi
 
     if ! grep -q "acpi_enforce_resources=lax.*amd_iommu=on.*iommu=pt" /etc/default/grub; then
-        echo "Updating GRUB configuration..."
+        echo ":: Updating GRUB configuration..."
         GRUB_FILE="/etc/default/grub"
         cp "$GRUB_FILE" "${GRUB_FILE}.backup"
 
@@ -66,7 +66,7 @@ EOF
     fi
 
     if [ ! -f /etc/udev/rules.d/60-openrgb.rules ]; then
-        echo "Setting up udev rules..."
+        echo ":: Setting up udev rules..."
         cat > /etc/udev/rules.d/60-openrgb.rules << EOF
 SUBSYSTEM=="hidraw*", GROUP="plugdev", MODE="0666"
 SUBSYSTEM=="usb", ATTRS{idVendor}=="2516", MODE="0666"
@@ -77,7 +77,7 @@ EOF
         udevadm trigger
     fi
 
-    echo "Setting up groups..."
+    echo ":: Setting up groups..."
     getent group i2c > /dev/null || groupadd i2c
     getent group plugdev > /dev/null || groupadd plugdev
 
@@ -89,7 +89,7 @@ EOF
     fi
 
     if [ -n "$SUDO_USER" ]; then
-        echo "Setting up OpenRGB configuration..."
+        echo ":: Setting up OpenRGB configuration..."
         mkdir -p "/home/$SUDO_USER/.config/OpenRGB/"{logs,profiles}
         cat > "/home/$SUDO_USER/.config/OpenRGB/profiles/default.orp" << EOF
 {
@@ -102,7 +102,7 @@ EOF
 
     SERVICE_FILE="/etc/systemd/system/openrgb.service"
     if [ ! -f "$SERVICE_FILE" ] || ! grep -q "ExecStart.*$COLOR" "$SERVICE_FILE"; then
-        echo "Creating/Updating systemd service..."
+        echo ":: Creating/Updating systemd service..."
         cat > "$SERVICE_FILE" << EOF
 [Unit]
 Description=OpenRGB LED Control
@@ -132,10 +132,10 @@ EOF
 }
 
 scan_nvme() {
-    echo "Scanning for XPG NVMe drive..."
+    echo ":: Scanning for XPG NVMe drive..."
     for i in $(seq 0 11); do
         if [ -e "/dev/i2c-$i" ]; then
-            echo "Scanning bus i2c-$i..."
+            echo ":: Scanning bus i2c-$i..."
             i2cdetect -y $i 2>/dev/null
         fi
     done
@@ -144,14 +144,14 @@ scan_nvme() {
 set_colors() {
     local color=$1
     
-    echo "Stopping any running OpenRGB processes..."
+    echo ":: Stopping any running OpenRGB processes..."
     killall openrgb 2>/dev/null || true
     sleep 2
 
     chmod 666 /dev/hidraw* 2>/dev/null || true
     chmod 660 /dev/i2c* 2>/dev/null || true
 
-    echo "Setting all devices to color #$color..."
+    echo ":: Setting all devices to color #$color..."
     
     openrgb --noautoconnect -l > /dev/null 2>&1
     sleep 1
@@ -160,13 +160,13 @@ set_colors() {
         if openrgb --noautoconnect -d "ENE DRAM" -m Static -c "$color" 2>/dev/null && \
            openrgb --noautoconnect -d "AMD Wraith Prism" -m Direct -c "$color" 2>/dev/null && \
            openrgb --noautoconnect -d "ASRock" -m Static -c "$color" 2>/dev/null; then
-            echo "Colors set successfully!"
+            echo ":: Colors set successfully!"
             return 0
         fi
-        echo "Attempt $i failed, retrying..."
+        echo ":: Attempt $i failed, retrying..."
         sleep 1
     done
-    echo "Warning: Some devices may not have been set correctly."
+    echo ":: Warning: Some devices may not have been set correctly."
 }
 
 setup_initial_config
@@ -176,12 +176,12 @@ scan_nvme 2>/dev/null
 set_colors "$COLOR"
 
 if [ "$NEEDS_REBOOT" = "1" ]; then
-    echo "IMPORTANT: System needs to reboot for kernel parameter changes to take effect."
-    echo "Would you like to reboot now? [y/N] "
+    echo ":: IMPORTANT: System needs to reboot for kernel parameter changes to take effect."
+    echo ":: Would you like to reboot now? [y/N] "
     read -r response
     if [[ "$response" =~ ^[Yy]$ ]]; then
         reboot
     fi
 elif [ "$NEEDS_REGROUP" = "1" ]; then
-    echo "IMPORTANT: You need to log out and back in for group changes to take effect."
+    echo ":: IMPORTANT: You need to log out and back in for group changes to take effect."
 fi

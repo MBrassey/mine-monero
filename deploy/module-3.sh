@@ -11,12 +11,12 @@ XMRIG_VERSION="v6.24.0"
 P2POOL_VERSION="v3.10"
 
 if ! sudo -n true 2>/dev/null; then
-    echo "This script requires sudo privileges. Please run with sudo or configure passwordless sudo."
+    echo ":: This script requires sudo privileges. Please run with sudo or configure passwordless sudo."
     exit 1
 fi
 
 if [[ "$EUID" -eq 0 ]] && [[ -z "$SUDO_USER" ]]; then
-   echo "This script should not be run as the root user directly. Use sudo with a regular user account."
+   echo ":: This script should not be run as the root user directly. Use sudo with a regular user account."
    exit 1
 fi
 
@@ -38,20 +38,20 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 log() {
-    echo -e "${GREEN}[$(date '+%Y-%m-%d %H:%M:%S')] $1${NC}"
+    echo ":: [$(date '+%Y-%m-%d %H:%M:%S')] $1"
 }
 
 error() {
-    echo -e "${RED}[ERROR] $1${NC}"
+    echo ":: [ERROR] $1"
     exit 1
 }
 
 warning() {
-    echo -e "${YELLOW}[WARNING] $1${NC}"
+    echo ":: [WARNING] $1"
 }
 
 success() {
-    echo -e "${GREEN}[SUCCESS] $1${NC}"
+    echo ":: [SUCCESS] $1"
 }
 
 download_git_source() {
@@ -452,70 +452,70 @@ create_service_scripts() {
 #!/bin/bash
 
 show_usage() {
-    echo "Usage: $0 {start|stop|restart|status|enable|disable|logs}"
+    echo ":: Usage: $0 {start|stop|restart|status|enable|disable|logs}"
 }
 
 start_services() {
-    echo "Starting mining services..."
+    echo ":: Starting mining services..."
     sudo systemctl start monerod.service
     sudo systemctl start p2pool.service
     sudo systemctl start xmrig.service
 }
 
 stop_services() {
-    echo "Stopping mining services..."
+    echo ":: Stopping mining services..."
     sudo systemctl stop xmrig.service
     sudo systemctl stop p2pool.service
     sudo systemctl stop monerod.service
 }
 
 restart_services() {
-    echo "Restarting mining services..."
+    echo ":: Restarting mining services..."
     stop_services
     start_services
 }
 
 show_status() {
-    echo "=== Mining Services Status ==="
+    echo ":: === Mining Services Status ==="
     echo
-    echo "Monerod Status:"
+    echo ":: Monerod Status:"
     sudo systemctl status monerod.service --no-pager -l
     echo
-    echo "P2Pool Status:"
+    echo ":: P2Pool Status:"
     sudo systemctl status p2pool.service --no-pager -l
     echo
-    echo "XMRig Status:"
+    echo ":: XMRig Status:"
     sudo systemctl status xmrig.service --no-pager -l
     echo
-    echo "=== Service Enable Status ==="
+    echo ":: === Service Enable Status ==="
     systemctl is-enabled monerod.service p2pool.service xmrig.service
     echo
 }
 
 enable_services() {
-    echo "Enabling services for automatic startup..."
+    echo ":: Enabling services for automatic startup..."
     sudo systemctl enable monerod.service
     sudo systemctl enable p2pool.service
     sudo systemctl enable xmrig.service
 }
 
 disable_services() {
-    echo "Disabling services from automatic startup..."
+    echo ":: Disabling services from automatic startup..."
     sudo systemctl disable xmrig.service
     sudo systemctl disable p2pool.service
     sudo systemctl disable monerod.service
 }
 
 show_logs() {
-    echo "=== Recent Logs ==="
+    echo ":: === Recent Logs ==="
     echo
-    echo "Monerod Logs (last 20 lines):"
+    echo ":: Monerod Logs (last 20 lines):"
     sudo journalctl -u monerod.service -n 20 --no-pager
     echo
-    echo "P2Pool Logs (last 20 lines):"
+    echo ":: P2Pool Logs (last 20 lines):"
     sudo journalctl -u p2pool.service -n 20 --no-pager
     echo
-    echo "XMRig Logs (last 20 lines):"
+    echo ":: XMRig Logs (last 20 lines):"
     sudo journalctl -u xmrig.service -n 20 --no-pager
     echo
 }
@@ -576,36 +576,36 @@ EOF
     sudo tee /usr/local/bin/setup-msr > /dev/null << 'EOF'
 #!/bin/bash
 
-echo "Loading MSR kernel module..."
+echo ":: Loading MSR kernel module..."
 if ! lsmod | grep -q "^msr "; then
     if modprobe msr 2>/dev/null; then
-        echo "MSR module loaded successfully"
+        echo ":: MSR module loaded successfully"
     else
-        echo "Warning: Could not load MSR module. Some performance features may be disabled."
-        echo "This is not critical for mining operation."
+        echo ":: Warning: Could not load MSR module. Some performance features may be disabled."
+        echo ":: This is not critical for mining operation."
         exit 0
     fi
 else
-    echo "MSR module already loaded"
+    echo ":: MSR module already loaded"
 fi
 
 if [ -d /dev/cpu ]; then
-    echo "Setting MSR device permissions..."
+    echo ":: Setting MSR device permissions..."
     find /dev/cpu -name "msr" -type c -exec chmod 644 {} \; 2>/dev/null || true
-    echo "MSR permissions set"
+    echo ":: MSR permissions set"
 else
-    echo "Warning: MSR devices not found. Performance monitoring may be limited."
+    echo ":: Warning: MSR devices not found. Performance monitoring may be limited."
 fi
 
 if [ -f /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor ]; then
-    echo "Setting CPU governor to performance..."
+    echo ":: Setting CPU governor to performance..."
     echo performance | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor >/dev/null 2>&1 || true
-    echo "CPU governor set to performance"
+    echo ":: CPU governor set to performance"
 else
-    echo "CPU frequency scaling not available"
+    echo ":: CPU frequency scaling not available"
 fi
 
-echo "MSR setup complete"
+echo ":: MSR setup complete"
 exit 0
 EOF
     
