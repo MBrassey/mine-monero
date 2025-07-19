@@ -257,7 +257,7 @@ EOF
     
     cmake -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_INSTALL_PREFIX="$INSTALL_DIR" \
-          -DWITH_HTTPD=ON \
+          -DWITH_HTTP=ON \
           -DWITH_TLS=ON \
           -DWITH_HWLOC=ON \
           -DWITH_MSR=ON \

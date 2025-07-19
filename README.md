@@ -403,7 +403,6 @@ mining-control restart
 sudo journalctl -u monerod.service -n 20
 
 # P2Pool requires synced monerod
-```bash
 sudo journalctl -u monerod -f | grep HEIGHT
 ```
 
@@ -486,8 +485,6 @@ Services are configured with proper dependencies:
 
 ### Build Security
 - **Source Compilation**: All software built from official sources
-- **Dependency Cleanup**: Build tools removed after compilation
-- **Runtime Libraries**: Only essential runtime libraries kept
 - **Service Isolation**: Services run as non-root users where possible
 
 ## Support
