@@ -2,16 +2,16 @@
 
 <img align="left" src="https://s2.coinmarketcap.com/static/img/coins/128x128/328.png" alt="Monero Logo" width="128" height="128">
 
-Automated deployment system for streamlined Monero mining with P2Pool decentralized mining, XMRig optimization, and enterprise-grade reliability.
+Automated deployment system for Monero mining with P2Pool and XMRig.
 
 &nbsp;• **Zero Mining Fees** local P2Pool  
 &nbsp;• **Zero Donation** XMRig
 
 <br clear="left"/>
 
-## Recommended Hardware Build
+## Reference Hardware Configuration
 
-This mining setup is optimized for the following hardware configuration:
+This deployment has been tested with the following hardware:
 
 ### Core Components
 
@@ -127,115 +127,74 @@ This mining setup is optimized for the following hardware configuration:
 
 **Step 8: Execute Module-1 (System Preparation)**
 
-Module-1 performs comprehensive system optimization for mining workloads.
-
-**Run Module-1:**
 ```bash
 chmod +x module-1.sh
 sudo ./module-1.sh
 ```
 
-**What module-1.sh does:**
+**module-1.sh functions:**
 
-**System Cleanup & Package Management:**
-- **Cleans previous configurations**: Removes any conflicting services and configurations
-- **Package management cleanup**: Removes problematic PPAs and cleans package cache
-- **Repository management**: Ensures clean package repository state
+**System cleanup:**
+- Removes conflicting services and configurations
+- Cleans package management state (removes problematic PPAs)
+- Updates system packages
 
-**Disk Space Management:**
-- **Automatic LVM expansion**: Detects and expands logical volumes to use full disk capacity
-- **Interactive disk expansion**: Prompts user before expanding disk space
-- **Space verification**: Reports before/after disk usage statistics
+**System optimizations:**
+- Disables throttling services (thermald, power-profiles-daemon, bluetooth, cups, snapd, etc.)
+- Sets CPU governor to performance mode
+- Enables CPU boost, removes frequency limits
+- Configures kernel parameters: vm.swappiness=1, vm.nr_hugepages=6144, disables NUMA balancing
+- Loads MSR module and applies RandomX CPU optimizations
+- Disables transparent huge pages
+- Creates systemd service to persist optimizations on boot
 
-**Security & Network Configuration:**
-- **Firewall setup**: Comprehensive UFW configuration with mining-specific rules
-- **SSH hardening**: Configures key-based authentication with specific public key
-- **Network access control**: Allows LAN access to mining ports, blocks unnecessary external access
+**Security configuration:**
+- Configures UFW firewall with mining port rules
+- Installs SSH public key for key-based authentication
+- Disables password authentication
 
-**Performance Optimizations:**
-- **Service management**: Disables throttling services (thermald, power-profiles-daemon, etc.)
-- **CPU optimization**: Sets all CPU cores to "performance" governor
-- **CPU boost**: Enables CPU boost and removes frequency limits
-- **Memory optimization**: Configures huge pages (6144 pages = 12GB)
-- **Kernel parameters**: Sets vm.swappiness=1, disables NUMA balancing
-- **MSR optimization**: Loads MSR module and applies RandomX optimizations
-- **Transparent huge pages**: Disables THP for better RandomX performance
+**Monitoring:**
+- Installs Prometheus Node Exporter on port 9100
+- Sets up custom metrics collection for CPU temperature and huge pages
 
-**Monitoring Infrastructure:**
-- **Node Exporter**: Installs Prometheus Node Exporter v1.7.0+ 
-- **System metrics**: Custom metrics collector for CPU temperature, frequency, huge pages
-- **Metrics endpoint**: Exposes metrics on port 9100 for external monitoring
+**Disk management:**
+- Detects LVM configuration and offers disk expansion
 
-**Persistent Optimizations:**
-- **Systemd service**: Creates mining-opt.service to maintain optimizations across reboots
-- **Boot parameters**: Adds intel_pstate=disable to GRUB configuration
-- **Module loading**: Ensures MSR module loads automatically on boot
-
-**Network Ports Configured:**
-- SSH (22): Allowed from anywhere
-- Monero P2P (18080): Allowed from LAN
-- Monero RPC (18081): Allowed from LAN  
-- P2Pool Mining (3333): Allowed from anywhere
-- P2Pool P2P (37889): Allowed from LAN
-- Node Exporter (9100): Allowed from LAN
-- XMRig API (18088): Allowed from LAN
-
-**Important Notes:**
-- **Requires sudo**: Module-1 must be run with root privileges
-- **May require reboot**: If GRUB parameters are updated, system reboot is needed
-- **SSH key configured**: Installs specific SSH public key for authentication
-- **Disk expansion**: Offers to expand disk to full capacity if LVM detected
-- **Service removal**: Removes throttling services that impact mining performance
-
-**Post-Execution:**
-- System may prompt for reboot if kernel parameters were changed
-- All optimizations persist across reboots via systemd service
-- SSH is configured for key-based authentication only
-- Firewall is enabled with mining-optimized ruleset
+**Network ports configured:**
+- SSH (22): open
+- Monero P2P (18080): LAN only
+- Monero RPC (18081): LAN only  
+- P2Pool Mining (3333): open
+- P2Pool P2P (37889): LAN only
+- Node Exporter (9100): LAN only
+- XMRig API (8080): LAN only
 
 ### Phase 4: RGB Control (Optional)
 
-**Step 9: Execute Module-2 (RGB Device Control)**
+**Step 9: Execute Module-2 (RGB Device Control) - Optional**
 
-This is an optional aesthetic enhancement module that provides unified RGB control for your mining hardware.
-
-**What module-2.sh does:**
-- **Installs OpenRGB**: Universal RGB controller from official Debian package
-- **Hardware Detection**: Automatically detects and configures:
-  - ENE DRAM (XPG Lancer Blade RGB memory)
-  - AMD Wraith Prism CPU cooler
-  - ASRock motherboard RGB
-  - XPG NVMe drive (not yet working)
-- **Kernel Configuration**: 
-  - Loads i2c kernel modules for RGB device access
-  - Updates GRUB with required kernel parameters
-  - Sets up udev rules for device permissions
-- **Systemd Service**: Creates persistent service to restore RGB colors on boot
-- **User Permissions**: Configures proper access permissions for RGB devices
-
-**Usage:**
 ```bash
-# Run with default blue color (0000FF)
+# Default blue (0000FF)
 sudo ./module-2.sh
 
-# Run with custom color (6-digit hex)
-sudo ./module-2.sh FF0000  # Red
-sudo ./module-2.sh 00FF00  # Green  
-sudo ./module-2.sh FFFFFF  # White
-sudo ./module-2.sh 800080  # Purple
+# Custom color (6-digit hex)
+sudo ./module-2.sh FF0000
 ```
 
-**Important Notes:**
-- **Requires sudo**: Module-2 must be run with root privileges
-- **May require reboot**: If GRUB parameters are updated, system reboot is needed
-- **Purely aesthetic**: This module only affects RGB lighting, not mining performance
-- **Optional**: Mining will work perfectly without RGB control
+**module-2.sh functions:**
+- Installs OpenRGB from Debian package
+- Loads i2c kernel modules (i2c-dev, i2c-piix4, i2c_amd_ryzen)
+- Updates GRUB with kernel parameters: acpi_enforce_resources=lax amd_iommu=on iommu=pt
+- Creates udev rules for device permissions
+- Creates systemd service to set RGB colors on boot
+- Scans i2c buses for devices
 
-**Supported Hardware:**
-- XPG Lancer Blade RGB DDR5 memory
-- AMD Wraith Prism RGB CPU cooler  
-- ASRock motherboard RGB lighting
-- XPG SPECTRIX S20G RGB NVMe SSD
+**RGB devices controlled:**
+- ENE DRAM (memory modules)
+- AMD Wraith Prism (CPU cooler)
+- ASRock (motherboard)
+
+**Note:** NVMe drive RGB scanning implemented but control not functional
 
 ### Phase 6: Configuration Setup
 
@@ -266,57 +225,45 @@ DONATION_LEVEL=0
 ### Phase 7: Mining Software Installation
 
 **Step 11: Execute Module-3**
-1. Make the script executable and run:
-   ```bash
-   chmod +x module-3.sh
-   sudo ./module-3.sh
-   ```
+```bash
+chmod +x module-3.sh
+sudo ./module-3.sh
+```
 
-**What module-3.sh does:**
-- **Installs dependencies**: build tools, libraries needed for compiling
-- **Downloads and builds from source**:
-  - Monero daemon (monerod) from official repository
-  - XMRig miner with 0% donation hardcoded
-  - P2Pool from official repository
-- **Creates optimized XMRig configuration**:
-  - Configured for Ryzen 9950X with huge pages enabled
-  - Pool: localhost:3333 (local P2Pool Mini ONLY)
-  - No external pools or fallbacks
-- **Sets up systemd services** with proper dependencies:
-  - monerod.service (Monero daemon)
-  - p2pool.service (P2Pool Mini with --mini flag)
-  - xmrig.service (XMRig miner)
-  - msr-tools.service (MSR optimization)
-- **Configures system optimizations**:
-  - Huge pages setup (6144 pages = 12GB)
-  - MSR (CPU register) optimizations
-  - CPU performance governor
-- **Creates management script**: mining-control for easy service management
-- **Removes build dependencies** after compilation for security
-- **Starts all services** in correct order with health checks
-
-
+**module-3.sh functions:**
+- Installs build dependencies (build-essential, cmake, boost, etc.)
+- Downloads and compiles from source:
+  - Monero daemon (monerod) with pruned blockchain support
+  - XMRig with hardcoded 0% donation level
+  - P2Pool
+- Creates XMRig configuration targeting localhost:3333 (P2Pool stratum)
+- Creates systemd services:
+  - monerod.service (runs with --prune-blockchain --sync-pruned-blocks)
+  - p2pool.service (runs with --mini flag)
+  - xmrig.service
+  - msr-tools.service
+- Creates mining-control management script
+- Enables and starts all services
 
 ## System Architecture
 
 | Component | Implementation | Configuration |
 |-----------|----------------|---------------|
-| **Mining Pool** | P2Pool Mini (local only) | No fees, direct payouts |
-| **Miner Software** | XMRig (compiled with 0% donation) | No donation, 0% overhead |
-| **Blockchain Node** | Monero daemon (pruned) | Faster sync, smaller storage |
+| **Mining Pool** | P2Pool Mini | No fees, direct payouts |
+| **Miner Software** | XMRig (0% donation) | Local compilation |
+| **Blockchain Node** | Monero daemon (pruned) | ~5GB storage vs ~160GB full |
 | **Minimum Payout** | P2Pool threshold | ~0.00027 XMR |
-| **Network Architecture** | Local P2Pool instance | No external pool connections |
 | **Payout Method** | Direct to wallet | No intermediary custody |
 
 ## System Components
 
 ### P2Pool Mini - Local Mining Pool
-- Local P2Pool instance with --mini flag (isolated mode)
-- Zero fees permanently
+- Local P2Pool instance with --mini flag
+- Zero fees
 - Direct wallet payouts
 - Low minimum payout threshold: ~0.00027 XMR
 - No registration required
-- No external peers or connections
+- Connects to P2Pool network for block discovery
 
 ### XMRig - Optimized Miner
 - Compiled from source with 0% donation level hardcoded
@@ -434,9 +381,8 @@ sudo systemctl is-enabled monerod p2pool xmrig
 ```
 
 ### P2Pool Monitoring
-- **P2Pool Mini Observer**: https://mini.p2pool.observer/miner/ (enter your wallet address at the end)
-- **Usage**: Visit https://mini.p2pool.observer/miner/WALLET_ADDRESS_HERE
-- **Local P2Pool**: Wait for monerod to sync (15-30 minutes), then restart p2pool service
+- **P2Pool Mini Observer**: https://mini.p2pool.observer/miner/WALLET_ADDRESS_HERE
+- **Local P2Pool status**: Wait for monerod to sync before P2Pool connects to network
 
 ## Troubleshooting
 
@@ -453,11 +399,12 @@ mining-control restart
 
 **P2Pool not connecting**
 ```bash
-# Check if monerod is synced (pruned mode syncs in 15-30 minutes)
+# Check if monerod is synced
 sudo journalctl -u monerod.service -n 20
 
 # P2Pool requires synced monerod
-# Look for: "Height: XXXX/XXXX (100.0%)" in monerod logs
+```bash
+sudo journalctl -u monerod -f | grep HEIGHT
 ```
 
 **XMRig not connecting to P2Pool**
@@ -512,13 +459,12 @@ Module-3 creates an optimized configuration at `~/monero-mining/install/etc/xmri
 - **Pool**: Local P2Pool ONLY (127.0.0.1:3333)
 
 ### P2Pool Configuration
-P2Pool runs with the following settings:
+P2Pool runs with: `--host 127.0.0.1 --rpc-port 18081 --zmq-port 18083 --wallet WALLET_ADDRESS --stratum 127.0.0.1:3333 --p2p 127.0.0.1:37889 --loglevel 1 --mini`
 
 - **Mini Mode**: `--mini` flag for lower difficulty
-- **Light Mode**: `--light-mode` for reduced memory usage
 - **Wallet**: Your specified wallet address
 - **Local Stratum**: Port 3333 for XMRig connection
-- **Isolated Mode**: No external peers (completely local)
+- **P2P Port**: 37889 for P2Pool network communication
 - **Log Level**: 1 for minimal verbosity
 
 ### Service Dependencies
@@ -535,7 +481,7 @@ Services are configured with proper dependencies:
 - **XMRig API**: Port 8080 (HTTP, read-only)
 - **Monero P2P**: Port 18080 (blockchain sync)
 - **Monero RPC**: Port 18081 (localhost only)
-- **P2Pool P2P**: Port 37888 (P2Pool Mini network)
+- **P2Pool P2P**: Port 37889 (P2Pool Mini network)
 - **P2Pool Stratum**: Port 3333 (localhost only)
 
 ### Build Security

@@ -122,8 +122,6 @@ install_dependencies() {
         libreadline6-dev \
         libldns-dev \
         libexpat1-dev \
-        doxygen \
-        graphviz \
         libpgm-dev \
         libhidapi-dev \
         libusb-1.0-0-dev \
@@ -156,15 +154,12 @@ install_dependencies() {
 }
 
 check_huge_pages() {
-    local huge_pages_nr=$(cat /proc/sys/vm/nr_hugepages 2>/dev/null || echo "0")
     local available_hugepages=$(grep HugePages_Free /proc/meminfo | awk '{print $2}' || echo "0")
     
     if [[ "$available_hugepages" -gt 0 ]]; then
         log "Huge pages available: $available_hugepages"
-        HUGE_PAGES_AVAILABLE=true
     else
         warning "No huge pages available. Performance may be reduced."
-        HUGE_PAGES_AVAILABLE=false
     fi
 }
 
@@ -199,41 +194,7 @@ EOF
     fi
 }
 
-wait_for_monerod_sync() {
-    local max_attempts=300  # 50 minutes max wait
-    local attempt=1
-    
-    log "Waiting for monerod to fully synchronize with the Monero network..."
-    log "This may take 15-60 minutes depending on your connection and hardware..."
-    
-    while [[ $attempt -le $max_attempts ]]; do
-        local sync_info=$(curl -s http://127.0.0.1:18081/get_info 2>/dev/null | jq -r '.synchronized // false' 2>/dev/null || echo "false")
-        local height=$(curl -s http://127.0.0.1:18081/get_info 2>/dev/null | jq -r '.height // 0' 2>/dev/null || echo "0")
-        local target_height=$(curl -s http://127.0.0.1:18081/get_info 2>/dev/null | jq -r '.target_height // 0' 2>/dev/null || echo "0")
-        
-        if [[ "$sync_info" == "true" ]] && [[ "$height" -gt 0 ]] && [[ "$target_height" -gt 0 ]]; then
-            local sync_percentage=$((height * 100 / target_height))
-            if [[ $sync_percentage -ge 99 ]]; then
-                success "Monerod is fully synchronized! Height: $height/$target_height (${sync_percentage}%)"
-                return 0
-            fi
-        fi
-        
-        if [[ "$height" -gt 0 ]] && [[ "$target_height" -gt 0 ]]; then
-            local sync_percentage=$((height * 100 / target_height))
-            log "Sync progress: $height/$target_height (${sync_percentage}%) - waiting... (attempt $attempt/$max_attempts)"
-        else
-            log "Waiting for monerod to start and connect to network... (attempt $attempt/$max_attempts)"
-        fi
-        
-        sleep 10
-        attempt=$((attempt+1))
-    done
-    
-    warning "Monerod sync check timed out after $((max_attempts * 10 / 60)) minutes"
-    warning "Continuing anyway - you can check sync status with: mining-control status"
-    return 0
-}
+
 
 build_monero() {
     log "Building Monero..."
@@ -479,14 +440,11 @@ create_xmrig_config() {
 }
 EOF
     
-    sudo chown root:root "$INSTALL_DIR/etc/xmrig-config.json"
-    sudo chmod 644 "$INSTALL_DIR/etc/xmrig-config.json"
-    sudo chown root:root "$INSTALL_DIR/bin/xmrig"
-    sudo chmod 755 "$INSTALL_DIR/bin/xmrig"
-    
     sudo chown -R "$REAL_USER:$REAL_USER" "$INSTALL_DIR" 2>/dev/null || true
     sudo chown root:root "$INSTALL_DIR/bin/xmrig"
+    sudo chmod 755 "$INSTALL_DIR/bin/xmrig"
     sudo chown root:root "$INSTALL_DIR/etc/xmrig-config.json"
+    sudo chmod 644 "$INSTALL_DIR/etc/xmrig-config.json"
 }
 
 create_service_scripts() {
@@ -500,9 +458,7 @@ show_usage() {
 start_services() {
     echo "Starting mining services..."
     sudo systemctl start monerod.service
-    sleep 10
     sudo systemctl start p2pool.service
-    sleep 10
     sudo systemctl start xmrig.service
 }
 
@@ -516,7 +472,6 @@ stop_services() {
 restart_services() {
     echo "Restarting mining services..."
     stop_services
-    sleep 5
     start_services
 }
 
@@ -609,9 +564,7 @@ After=local-fs.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/bin/bash -c 'modprobe msr 2>/dev/null || echo "MSR module not available - continuing"'
-ExecStart=/bin/bash -c 'if [ -d /dev/cpu ]; then find /dev/cpu -name "msr" -type c -exec chmod 644 {} \; 2>/dev/null; fi || true'
-ExecStart=/bin/bash -c 'if [ -f /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor ]; then echo performance | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor >/dev/null 2>&1; fi || true'
+ExecStart=/usr/local/bin/setup-msr
 StandardOutput=journal
 StandardError=journal
 SuccessExitStatus=0 1
@@ -733,65 +686,6 @@ EOF
     sudo systemctl daemon-reload
 }
 
-create_sync_wait_script() {
-    sudo tee /usr/local/bin/wait-for-sync > /dev/null << 'EOF'
-#!/bin/bash
-
-# Wait for monerod to be fully synchronized before starting dependent services
-log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
-}
-
-wait_for_sync() {
-    local max_attempts=300  # 50 minutes max wait
-    local attempt=1
-    
-    log "Waiting for monerod to be fully synchronized..."
-    
-    while [[ $attempt -le $max_attempts ]]; do
-        # Check if monerod is responding
-        if ! curl -s http://127.0.0.1:18081/get_info >/dev/null 2>&1; then
-            log "Waiting for monerod to start... (attempt $attempt/$max_attempts)"
-            sleep 10
-            attempt=$((attempt+1))
-            continue
-        fi
-        
-        # Get sync status
-        local sync_info=$(curl -s http://127.0.0.1:18081/get_info 2>/dev/null | jq -r '.synchronized // false' 2>/dev/null || echo "false")
-        local height=$(curl -s http://127.0.0.1:18081/get_info 2>/dev/null | jq -r '.height // 0' 2>/dev/null || echo "0")
-        local target_height=$(curl -s http://127.0.0.1:18081/get_info 2>/dev/null | jq -r '.target_height // 0' 2>/dev/null || echo "0")
-        
-        if [[ "$sync_info" == "true" ]] && [[ "$height" -gt 0 ]] && [[ "$target_height" -gt 0 ]]; then
-            local sync_percentage=$((height * 100 / target_height))
-            if [[ $sync_percentage -ge 99 ]]; then
-                log "Monerod is fully synchronized! Height: $height/$target_height (${sync_percentage}%)"
-                return 0
-            fi
-        fi
-        
-        if [[ "$height" -gt 0 ]] && [[ "$target_height" -gt 0 ]]; then
-            local sync_percentage=$((height * 100 / target_height))
-            log "Sync progress: $height/$target_height (${sync_percentage}%) - waiting..."
-        else
-            log "Waiting for monerod to connect to network..."
-        fi
-        
-        sleep 10
-        attempt=$((attempt+1))
-    done
-    
-    log "WARNING: Sync check timed out after $((max_attempts * 10 / 60)) minutes"
-    log "Continuing anyway - service may not work correctly until sync completes"
-    return 0
-}
-
-wait_for_sync
-EOF
-    
-    sudo chmod +x /usr/local/bin/wait-for-sync
-}
-
 setup_msr_safely() {
     log "Setting up MSR module (performance optimization)..."
     
@@ -823,34 +717,7 @@ ensure_hugepages() {
     fi
 }
 
-verify_pruned_mode() {
-    local max_attempts=30
-    local attempt=1
-    
-    log "Verifying pruned blockchain mode..."
-    
-    while [[ $attempt -le $max_attempts ]]; do
-        local db_size=$(curl -s http://127.0.0.1:18081/get_info 2>/dev/null | jq -r '.database_size // 0' 2>/dev/null || echo "0")
-        
-        if [[ "$db_size" != "0" ]] && [[ "$db_size" != "null" ]]; then
-            local db_size_gb=$((db_size / 1024 / 1024 / 1024))
-            if [[ $db_size_gb -le 5 ]]; then
-                success "CONFIRMED: Pruned blockchain mode active (DB size: ${db_size_gb}GB)"
-                return 0
-            elif [[ $db_size_gb -gt 10 ]]; then
-                error "ERROR: Full blockchain detected (${db_size_gb}GB)! Pruning failed!"
-                return 1
-            fi
-        fi
-        
-        log "Waiting for monerod to start... (attempt $attempt/$max_attempts)"
-        sleep 10
-        attempt=$((attempt+1))
-    done
-    
-    warning "Could not verify pruned mode - monerod may still be starting"
-    return 0
-}
+
 
 show_setup_summary() {
     log "Setup completed"
@@ -863,7 +730,6 @@ show_setup_summary() {
     
     log "Configuration:"
     log "  Pruned blockchain (--prune-blockchain --sync-pruned-blocks)"
-    log "  Storage: ~3-5GB vs ~65GB full node"
     log "  Mining address: $WALLET_ADDRESS"
     log "  Worker ID: $WORKER_ID"
     log "  P2Pool stratum: 127.0.0.1:3333"
@@ -880,7 +746,7 @@ show_setup_summary() {
     log "  Live logs: journalctl -u monerod.service -f"
     
     success "Installation complete"
-    log "Services are starting - sync will take 15-60 minutes"
+    log "Services are starting..."
     log "Check mining status: mining-control status"
 }
 
@@ -908,7 +774,6 @@ main() {
     
     create_xmrig_config
     create_service_scripts
-    create_sync_wait_script
     create_msr_setup
     create_systemd_services
     
@@ -930,7 +795,6 @@ main() {
     fi
     mkdir -p "$INSTALL_DIR/data"
     
-    log "Starting services..."
     if sudo systemctl start msr-tools.service; then
         log "MSR service started successfully"
     else
