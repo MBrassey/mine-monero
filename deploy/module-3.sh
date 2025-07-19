@@ -109,7 +109,7 @@ install_dependencies() {
     sudo apt-get update
     sudo apt-get install -y \
         build-essential \
-        bpytop \
+        btop \
         cmake \
         pkg-config \
         libboost-all-dev \
