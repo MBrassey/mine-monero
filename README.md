@@ -1,4 +1,4 @@
-# AMD Ryzen Monero (XMR) Mining Suite
+# Monero (XMR) Mining Suite
 
 <img align="left" src="https://s2.coinmarketcap.com/static/img/coins/128x128/328.png" alt="Monero Logo" width="128" height="128">
 
@@ -484,7 +484,7 @@ Services are configured with proper dependencies:
 - **P2Pool Stratum**: Port 3333 (localhost only)
 
 ### Build Security
-- **Source Compilation**: All software built from official sources
+- **Source Compilation**: All software built from official sourcecode
 - **Service Isolation**: Services run as non-root users where possible
 
 ## Support
