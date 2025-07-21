@@ -8,7 +8,7 @@ DONATION_LEVEL=0
 
 MONERO_VERSION="v0.18.4.0"
 XMRIG_VERSION="v6.24.0"
-P2POOL_VERSION="v3.10"
+P2POOL_VERSION="v4.9"
 
 if ! sudo -n true 2>/dev/null; then
     echo ":: This script requires sudo privileges. Please run with sudo or configure passwordless sudo."
