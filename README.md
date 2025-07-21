@@ -31,7 +31,7 @@ This deployment has been tested with the following hardware:
 - **Cores/Threads:** 16-Core, 32-Thread processing
 - **Base/Boost Clock:** Optimized for RandomX algorithm
 - **TDP Configuration:** 105W (configured in BIOS)
-- **Expected Hashrate:** ~18,000-22,000 H/s (RandomX)
+- **Expected Hashrate:** ~18,000-21,000 H/s (RandomX)
 
 **Memory Configuration:**
 - **Capacity:** 16GB (1x16GB single-channel)
@@ -367,6 +367,15 @@ curl -s http://[rig-ip]:8080/2/summary | jq
 - **Endpoint**: `http://127.0.0.1:8080` (local) or `http://[rig-ip]:8080` (remote)
 - **Port**: 8080 (configured in XMRig config)
 - **Access**: Enabled and accessible from network
+
+### Live Hashrate Monitoring
+```bash
+# Monitor XMRig hashrate in real-time
+sudo journalctl -u xmrig -f | grep speed
+
+# Monitor monerod blockchain sync progress
+sudo journalctl -u monerod -f | grep HEIGHT
+```
 
 ### Service Status
 ```bash

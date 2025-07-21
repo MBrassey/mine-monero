@@ -241,9 +241,8 @@ setup_firewall() {
         ufw allow from 10.0.0.0/8 to any port 18081 proto tcp comment 'Monero RPC LAN'
         
         ufw allow 3333/tcp comment 'P2Pool Mining'
-        ufw allow from 192.168.0.0/16 to any port 37889 proto tcp comment 'P2Pool P2P LAN'
-        ufw allow from 172.16.0.0/12 to any port 37889 proto tcp comment 'P2Pool P2P LAN'
-        ufw allow from 10.0.0.0/8 to any port 37889 proto tcp comment 'P2Pool P2P LAN'
+        ufw allow 37889/tcp comment 'P2Pool P2P Network'
+        ufw allow 37888/tcp comment 'P2Pool Mini P2P Network'
         
         ufw allow from 192.168.0.0/16 to any port 9100 proto tcp comment 'Node Exporter Metrics LAN'
         ufw allow from 172.16.0.0/12 to any port 9100 proto tcp comment 'Node Exporter Metrics LAN'
@@ -268,7 +267,8 @@ setup_firewall() {
     log "✓ Monero RPC (18081): Allowed from LAN"
     log "✓ Monero ZMQ (18083): Allowed on localhost"
     log "✓ P2Pool Mining (3333): Allowed from anywhere"
-    log "✓ P2Pool P2P (37889): Allowed from LAN"
+    log "✓ P2Pool P2P (37889): Allowed from anywhere"
+    log "✓ P2Pool Mini P2P (37888): Allowed from anywhere"
     log "✓ Node Exporter (9100): Allowed from LAN"
     log "✓ XMRig API (18088): Allowed from LAN"
     log "✓ Localhost: All traffic allowed"
